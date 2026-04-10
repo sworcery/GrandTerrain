@@ -1,0 +1,11 @@
+{
+  "required": true,
+  "package": "com.grandterrain.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "mixins": [
+    "WorldPresetsRegistrarMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

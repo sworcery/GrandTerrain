@@ -1,0 +1,14 @@
+{
+  "structures": [
+    {
+      "structure": "grandterrain:castle",
+      "weight": 1
+    }
+  ],
+  "placement": {
+    "type": "minecraft:random_spread",
+    "spacing": 80,
+    "separation": 20,
+    "salt": 987654321
+  }
+}
