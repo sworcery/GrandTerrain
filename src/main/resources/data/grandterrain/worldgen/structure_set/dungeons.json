@@ -1,0 +1,14 @@
+{
+  "structures": [
+    {
+      "structure": "grandterrain:dungeon",
+      "weight": 1
+    }
+  ],
+  "placement": {
+    "type": "minecraft:random_spread",
+    "spacing": 30,
+    "separation": 8,
+    "salt": 456789123
+  }
+}

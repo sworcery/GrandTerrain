@@ -1,0 +1,13 @@
+{
+  "generator.grandterrain.grandterrain": "GrandTerrain",
+  "biome.grandterrain.deep_ocean": "Deep Ocean",
+  "biome.grandterrain.coastal_cliffs": "Coastal Cliffs",
+  "biome.grandterrain.lowland_plains": "Lowland Plains",
+  "biome.grandterrain.temperate_forest": "Temperate Forest",
+  "biome.grandterrain.alpine_meadow": "Alpine Meadow",
+  "biome.grandterrain.mountain_pine_forest": "Mountain Pine Forest",
+  "biome.grandterrain.rocky_highlands": "Rocky Highlands",
+  "biome.grandterrain.snow_peaks": "Snow Peaks",
+  "biome.grandterrain.deep_valley": "Deep Valley",
+  "biome.grandterrain.volcanic_region": "Volcanic Region"
+}

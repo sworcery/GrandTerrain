@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "grandterrain",
+  "version": "${version}",
+  "name": "GrandTerrain",
+  "description": "Massive realistic world generation with towering mountains, deep caves, and custom biomes.",
+  "authors": ["GrandTerrain Team"],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/grandterrain/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["com.grandterrain.Grandterrain"],
+    "client": ["com.grandterrain.GrandterrainClient"],
+    "modmenu": ["com.grandterrain.client.GrandterrainModMenu"]
+  },
+  "mixins": ["grandterrain.mixins.json"],
+  "accessWidener": "grandterrain.accesswidener",
+  "depends": {
+    "fabricloader": ">=0.18.0",
+    "minecraft": ">=26.1",
+    "java": ">=25",
+    "fabric-api": "*"
+  },
+  "suggests": {
+    "cloth-config": "*",
+    "modmenu": "*"
+  }
+}
