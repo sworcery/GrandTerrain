@@ -1,6 +1,6 @@
 package com.grandterrain.worldgen.noise;
 
-import com.grandterrain.config.GrandterrainConfig;
+import com.grandterrain.config.ConfigSnapshot;
 
 /**
  * Ridged multifractal noise for dramatic mountain ridgelines and peaks.
@@ -19,27 +19,27 @@ public class MountainRidgeNoise {
     private final float baseFrequency;
     private final float heightScale;
 
-    public MountainRidgeNoise(long seed, GrandterrainConfig config) {
+    public MountainRidgeNoise(long seed, ConfigSnapshot config) {
         this.octaves = 7;
         this.persistence = 0.5f;
         this.lacunarity = 2.1f;
         this.baseFrequency = 1.0f / 2000.0f;
-        this.heightScale = config.mountainHeightScale;
+        this.heightScale = config.mountainHeightScale();
 
         octaveNoise = new FastNoiseLite[octaves];
         for (int i = 0; i < octaves; i++) {
-            octaveNoise[i] = new FastNoiseLite((int) (seed + 5000 + i * 31));
+            octaveNoise[i] = new FastNoiseLite((int) (seed ^ (0x9E3779B1L * (i + 1))));
             octaveNoise[i].SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2S);
             octaveNoise[i].SetFrequency(1.0f);
         }
 
-        warpX = new FastNoiseLite((int) (seed + 3000));
+        warpX = new FastNoiseLite((int) (seed ^ 0xC3C3C3C3L));
         warpX.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         warpX.SetFractalType(FastNoiseLite.FractalType.FBm);
         warpX.SetFractalOctaves(3);
         warpX.SetFrequency(1.0f / 3000.0f);
 
-        warpZ = new FastNoiseLite((int) (seed + 4000));
+        warpZ = new FastNoiseLite((int) (seed ^ 0x3C3C3C3CL));
         warpZ.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         warpZ.SetFractalType(FastNoiseLite.FractalType.FBm);
         warpZ.SetFractalOctaves(3);
@@ -47,8 +47,8 @@ public class MountainRidgeNoise {
     }
 
     public double sample(double x, double z) {
-        float fx = (float) x;
-        float fz = (float) z;
+        float fx = ContinentalNoise.wrapToFloat(x);
+        float fz = ContinentalNoise.wrapToFloat(z);
 
         float warpAmount = 150.0f;
         float origFx = fx;
@@ -65,11 +65,9 @@ public class MountainRidgeNoise {
         for (int i = 0; i < octaves; i++) {
             double n = octaveNoise[i].GetNoise(fx * (float) frequency, fz * (float) frequency);
 
-            // Ridged: take absolute value, invert, square for sharp ridges
             n = 1.0 - Math.abs(n);
             n = n * n;
 
-            // Weight by previous octave's value for more natural ridges
             n *= weight;
             weight = Math.min(1.0, Math.max(0.0, n * 2.0));
 
@@ -89,11 +87,13 @@ public class MountainRidgeNoise {
      */
     public double sampleHeight(double x, double z, double continentalBlend) {
         double ridge = sample(x, z);
-
-        // Blend with continental noise: mountains only in deep continental areas
         double blendedRidge = ridge * smoothstep(0.2, 0.6, continentalBlend);
+        return blendedRidge * 128.0 * heightScale;
+    }
 
-        // Scale to block height: base 128 blocks at scale 1.0, so 640 at scale 5.0
+    /** Pre-sampled variant: compute height from an already-known ridge value. */
+    public double sampleHeightFromRidge(double ridge, double continentalBlend) {
+        double blendedRidge = ridge * smoothstep(0.2, 0.6, continentalBlend);
         return blendedRidge * 128.0 * heightScale;
     }
 

@@ -34,14 +34,28 @@ public class DungeonStructure extends Structure {
 
     @Override
     public Optional<GenerationStub> findGenerationPoint(GenerationContext context) {
+        if (context.chunkGenerator() instanceof com.grandterrain.worldgen.GrandterrainChunkGenerator gen
+                && !gen.getConfigSnapshot().enableDungeons()) {
+            return Optional.empty();
+        }
+
         ChunkPos chunkPos = context.chunkPos();
         int x = chunkPos.getMiddleBlockX();
         int z = chunkPos.getMiddleBlockZ();
         int surfaceY = context.chunkGenerator().getBaseHeight(x, z, Heightmap.Types.WORLD_SURFACE_WG,
                 context.heightAccessor(), context.randomState());
 
-        // Place underground, at least 20 blocks below surface
-        int y = Math.max(context.heightAccessor().getMinY() + 10, surfaceY - 30 - context.random().nextInt(40));
+        // Void guard: if the column has no solid ground above min-Y (i.e. all ocean/air),
+        // don't place a dungeon - it would carve a hole to the void.
+        int minY = context.heightAccessor().getMinY();
+        if (surfaceY <= minY + 5) return Optional.empty();
+
+        // Place at least 30 blocks below surface, with at least 10 blocks of stone
+        // above to keep it buried.
+        int depthOffset = 30 + context.random().nextInt(40);
+        int y = surfaceY - depthOffset;
+        if (y < minY + 10) y = minY + 10;
+        if (y > surfaceY - 15) return Optional.empty(); // not enough ceiling
 
         BlockPos pos = new BlockPos(x, y, z);
         return Optional.of(new GenerationStub(pos, builder -> {

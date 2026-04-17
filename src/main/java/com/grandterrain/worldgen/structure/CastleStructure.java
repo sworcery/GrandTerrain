@@ -38,14 +38,33 @@ public class CastleStructure extends Structure {
 
     @Override
     public Optional<GenerationStub> findGenerationPoint(GenerationContext context) {
+        // Respect config toggle
+        if (context.chunkGenerator() instanceof com.grandterrain.worldgen.GrandterrainChunkGenerator gen
+                && !gen.getConfigSnapshot().enableCastles()) {
+            return Optional.empty();
+        }
+
         ChunkPos chunkPos = context.chunkPos();
         int x = chunkPos.getMiddleBlockX();
         int z = chunkPos.getMiddleBlockZ();
-        int y = context.chunkGenerator().getBaseHeight(x, z, Heightmap.Types.WORLD_SURFACE_WG,
+        var hm = Heightmap.Types.WORLD_SURFACE_WG;
+        int y = context.chunkGenerator().getBaseHeight(x, z, hm,
                 context.heightAccessor(), context.randomState());
 
-        // Only generate on relatively flat terrain above sea level
         if (y < 140 || y > 350) return Optional.empty();
+
+        // Flatness check: reject if the 12-block footprint has >8 blocks of relief
+        int yN = context.chunkGenerator().getBaseHeight(x, z - 12, hm,
+                context.heightAccessor(), context.randomState());
+        int yS = context.chunkGenerator().getBaseHeight(x, z + 12, hm,
+                context.heightAccessor(), context.randomState());
+        int yE = context.chunkGenerator().getBaseHeight(x + 12, z, hm,
+                context.heightAccessor(), context.randomState());
+        int yW = context.chunkGenerator().getBaseHeight(x - 12, z, hm,
+                context.heightAccessor(), context.randomState());
+        int maxDelta = Math.max(Math.max(Math.abs(y - yN), Math.abs(y - yS)),
+                Math.max(Math.abs(y - yE), Math.abs(y - yW)));
+        if (maxDelta > 8) return Optional.empty();
 
         BlockPos pos = new BlockPos(x, y, z);
 
