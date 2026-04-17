@@ -59,6 +59,12 @@ public class GrandterrainConfig {
         // Ensure sea level is within world bounds
         if (seaLevel < worldMinY + 10) seaLevel = worldMinY + 10;
         if (seaLevel > worldMinY + worldHeight - 10) seaLevel = worldMinY + worldHeight - 10;
+
+        // Snow line must be comfortably above sea level so the transition tiers fit.
+        if (snowLineBase <= seaLevel + 50) snowLineBase = seaLevel + 100;
+        if (snowLineBase > worldMinY + worldHeight - 5) {
+            snowLineBase = worldMinY + worldHeight - 5;
+        }
     }
 
     private static float clamp(float value, float min, float max) {

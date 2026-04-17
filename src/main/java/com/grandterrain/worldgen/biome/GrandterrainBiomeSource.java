@@ -1,8 +1,13 @@
 package com.grandterrain.worldgen.biome;
 
+import com.grandterrain.Grandterrain;
 import com.mojang.serialization.MapCodec;
+import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.core.Holder;
 import net.minecraft.core.HolderGetter;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.RegistryOps;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Biomes;
@@ -11,15 +16,21 @@ import net.minecraft.world.level.biome.Climate;
 import java.util.stream.Stream;
 
 /**
- * Altitude and climate-based biome source for GrandTerrain.
- * Uses continentalness, altitude, and humidity noise to select biomes.
+ * Altitude-based biome source for GrandTerrain. Uses a per-chunk-generator
+ * injected {@link HolderGetter} (via RegistryOps context) to look up biomes.
+ *
+ * The Climate.Sampler passed to getNoiseBiome is vanilla-empty for this generator,
+ * so biome selection is driven by altitude + stored climate noise, not the sampler.
  */
 public class GrandterrainBiomeSource extends BiomeSource {
 
-    public static final MapCodec<GrandterrainBiomeSource> CODEC = MapCodec.unit(
-            () -> { throw new IllegalStateException("GrandterrainBiomeSource requires a HolderGetter"); }
+    public static final MapCodec<GrandterrainBiomeSource> CODEC = RecordCodecBuilder.mapCodec(instance ->
+            instance.group(
+                    RegistryOps.retrieveGetter(Registries.BIOME)
+            ).apply(instance, GrandterrainBiomeSource::new)
     );
 
+    private final HolderGetter<Biome> biomeGetter;
     private final Holder<Biome> deepOcean;
     private final Holder<Biome> coastalCliffs;
     private final Holder<Biome> lowlandPlains;
@@ -30,12 +41,11 @@ public class GrandterrainBiomeSource extends BiomeSource {
     private final Holder<Biome> snowPeaks;
     private final Holder<Biome> deepValley;
     private final Holder<Biome> volcanicRegion;
-    // Vanilla fallbacks for cave biomes
     private final Holder<Biome> lushCaves;
     private final Holder<Biome> deepDark;
 
     public GrandterrainBiomeSource(HolderGetter<Biome> biomeGetter) {
-        // Custom biomes (may fall back to vanilla if not yet registered)
+        this.biomeGetter = biomeGetter;
         this.deepOcean = getOrFallback(biomeGetter, GrandterrainBiomes.DEEP_OCEAN, Biomes.DEEP_OCEAN);
         this.coastalCliffs = getOrFallback(biomeGetter, GrandterrainBiomes.COASTAL_CLIFFS, Biomes.STONY_SHORE);
         this.lowlandPlains = getOrFallback(biomeGetter, GrandterrainBiomes.LOWLAND_PLAINS, Biomes.PLAINS);
@@ -50,14 +60,18 @@ public class GrandterrainBiomeSource extends BiomeSource {
         this.deepDark = biomeGetter.getOrThrow(Biomes.DEEP_DARK);
     }
 
+    public HolderGetter<Biome> getBiomeGetter() {
+        return biomeGetter;
+    }
+
     private static Holder<Biome> getOrFallback(HolderGetter<Biome> getter,
-                                                net.minecraft.resources.ResourceKey<Biome> primary,
-                                                net.minecraft.resources.ResourceKey<Biome> fallback) {
-        try {
-            return getter.getOrThrow(primary);
-        } catch (Exception e) {
+                                                ResourceKey<Biome> primary,
+                                                ResourceKey<Biome> fallback) {
+        return getter.get(primary).orElseGet(() -> {
+            Grandterrain.LOGGER.warn("Biome {} not found; falling back to {}",
+                    primary.identifier(), fallback.identifier());
             return getter.getOrThrow(fallback);
-        }
+        });
     }
 
     @Override
@@ -76,66 +90,22 @@ public class GrandterrainBiomeSource extends BiomeSource {
 
     @Override
     public Holder<Biome> getNoiseBiome(int x, int y, int z, Climate.Sampler sampler) {
-        // Biome coords are world coords / 4
         int blockY = y * 4;
 
         // Underground biomes
         if (blockY < -50) {
-            if (blockY < -150) {
-                return deepDark;
-            }
-            return lushCaves;
+            return blockY < -150 ? deepDark : lushCaves;
         }
 
-        // Use the sampler's climate parameters if available
-        // The climate parameters are set by the noise router
-        Climate.TargetPoint target = sampler.sample(x, y, z);
-
-        // Extract continentalness and erosion from climate
-        // These are in "quart" units (divided by 10000)
-        float continentalness = Climate.unquantizeCoord(target.continentalness());
-        float erosion = Climate.unquantizeCoord(target.erosion());
-        float temperature = Climate.unquantizeCoord(target.temperature());
-        float humidity = Climate.unquantizeCoord(target.humidity());
-
-        // Simple altitude-based selection as primary (since we control the terrain)
-        if (blockY < 60) {
-            return deepOcean;
-        }
-
-        if (blockY < 135) {
-            // Near sea level: coast or lowland
-            if (blockY < 100) {
-                return coastalCliffs;
-            }
-            return lowlandPlains;
-        }
-
-        if (blockY < 200) {
-            // Low-mid altitude
-            if (humidity > 0.3f) {
-                return temperateForest;
-            }
-            return lowlandPlains;
-        }
-
-        if (blockY < 280) {
-            // Mid altitude
-            if (humidity > 0.4f) {
-                return mountainPineForest;
-            }
-            return alpineMeadow;
-        }
-
-        if (blockY < 380) {
-            // High altitude
-            if (erosion > 0.5f) {
-                return deepValley;
-            }
-            return rockyHighlands;
-        }
-
-        // Very high: snow peaks
+        // Altitude-driven tiers (humidity/climate branches removed - sampler is empty
+        // for this generator; using it would produce dead branches).
+        if (blockY < 60)  return deepOcean;
+        if (blockY < 100) return coastalCliffs;
+        if (blockY < 135) return lowlandPlains;
+        if (blockY < 200) return temperateForest;
+        if (blockY < 280) return alpineMeadow;
+        if (blockY < 350) return mountainPineForest;
+        if (blockY < 420) return rockyHighlands;
         return snowPeaks;
     }
 }
