@@ -5,11 +5,10 @@ import com.grandterrain.worldgen.noise.ContinentalNoise;
 import com.grandterrain.worldgen.noise.FastNoiseLite;
 
 /**
- * Generates rare mega-caverns using Voronoi cellular noise.
- * At cell centers, large spherical/ellipsoidal caverns are carved (30-60 block radius).
- * Spacing: ~500 blocks apart.
+ * Rare mega-caverns using Voronoi cellular noise (~500 block spacing,
+ * 30-60 block radius chambers).
  */
-public class CavernGenerator {
+public class CavernGenerator implements CaveContributor {
 
     private final FastNoiseLite cellNoise;
     private final FastNoiseLite floorNoise;
@@ -22,7 +21,6 @@ public class CavernGenerator {
         this.seaLevel = config.seaLevel();
         this.bedrockFloor = config.worldMinY() + 30;
 
-        // Linear Euclidean so the Distance return type is in its expected [0, ~1] range.
         cellNoise = new FastNoiseLite((int) (seed ^ 0xCA4EC0DEL));
         cellNoise.SetNoiseType(FastNoiseLite.NoiseType.Cellular);
         cellNoise.SetCellularDistanceFunction(FastNoiseLite.CellularDistanceFunction.Euclidean);
@@ -36,10 +34,12 @@ public class CavernGenerator {
         floorNoise.SetFrequency(1.0f / 30.0f);
     }
 
-    public double sample(double x, double y, double z) {
-        if (!enabled) return -1.0;
-        if (y > seaLevel - 40) return -1.0;
-        if (y < bedrockFloor) return -1.0;
+    @Override public int minY() { return bedrockFloor; }
+    @Override public int maxY() { return seaLevel - 40; }
+
+    @Override
+    public CarveResult sample(double x, double y, double z) {
+        if (!enabled) return CarveResult.SOLID;
 
         float fx = ContinentalNoise.wrapToFloat(x);
         float fz = ContinentalNoise.wrapToFloat(z);
@@ -47,24 +47,24 @@ public class CavernGenerator {
         double cellDist = cellNoise.GetNoise(fx, fz);
         double cavernThreshold = 0.08;
 
-        if (cellDist > cavernThreshold) return -1.0;
+        if (cellDist > cavernThreshold) return CarveResult.SOLID;
 
         double proximity = 1.0 - (cellDist / cavernThreshold);
         double cavernRadius = 25.0 + proximity * 35.0;
-
         double cavernCenterY = -100.0 + floorNoise.GetNoise(fx * 0.5f, fz * 0.5f) * 40.0;
         double verticalDist = Math.abs(y - cavernCenterY);
         double verticalRadius = cavernRadius * 0.6;
 
-        if (verticalDist > verticalRadius) return -1.0;
+        if (verticalDist > verticalRadius) return CarveResult.SOLID;
 
         double verticalFade = 1.0 - (verticalDist / verticalRadius);
-
         double floorOffset = floorNoise.GetNoise(fx, (float) y, fz) * 8.0;
         double floorY = cavernCenterY - verticalRadius + 5.0 + floorOffset;
 
-        if (y < floorY) return -1.0;
+        if (y < floorY) return CarveResult.SOLID;
 
-        return proximity * verticalFade - 0.2;
+        return (proximity * verticalFade - 0.2) > 0
+                ? CarveResult.CARVE_AIR
+                : CarveResult.SOLID;
     }
 }

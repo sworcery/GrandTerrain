@@ -2,6 +2,8 @@ package com.grandterrain.worldgen;
 
 import com.grandterrain.config.ConfigManager;
 import com.grandterrain.config.ConfigSnapshot;
+import com.grandterrain.worldgen.cave.CarveResult;
+import com.grandterrain.worldgen.cave.CaveContributor;
 import com.grandterrain.worldgen.noise.GrandterrainNoiseRouter;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
@@ -290,40 +292,20 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
                     pos.set(localX, y, localZ);
 
                     if (density > 0) {
-                        boolean carved = false;
+                        CarveResult carve = sampleCaves(r, worldX, y, worldZ);
 
-                        if (y < seaLevel - 10 && y > minY + 5) {
-                            if (r.getCheeseCaves().sample(worldX, y, worldZ) > 0) {
-                                carved = true;
-                            }
-                            if (!carved && y < seaLevel - 5
-                                    && r.getSpaghettiCaves().sample(worldX, y, worldZ) > 0) {
-                                carved = true;
-                            }
-                            if (!carved && y < seaLevel - 40 && y > minY + 26
-                                    && r.getMegaCaverns().sample(worldX, y, worldZ) > 0) {
-                                carved = true;
-                            }
-                            if (!carved
-                                    && r.getUndergroundRivers().sampleCarve(worldX, y, worldZ) > 0) {
-                                carved = true;
-                                if (r.getUndergroundRivers().sampleIsWater(worldX, y, worldZ)) {
-                                    chunk.setBlockState(pos, Blocks.WATER.defaultBlockState(), 0);
-                                    continue;
+                        switch (carve) {
+                            case CARVE_WATER -> chunk.setBlockState(pos,
+                                    Blocks.WATER.defaultBlockState(), 0);
+                            case CARVE_AIR -> {
+                                if (y < minY + 20) {
+                                    chunk.setBlockState(pos, Blocks.LAVA.defaultBlockState(), 0);
                                 }
+                                // else default AIR
                             }
-                        }
-
-                        if (carved) {
-                            if (y < minY + 20) {
-                                chunk.setBlockState(pos, Blocks.LAVA.defaultBlockState(), 0);
-                            }
-                        } else {
-                            if (y < minY + 5) {
-                                chunk.setBlockState(pos, Blocks.DEEPSLATE.defaultBlockState(), 0);
-                            } else {
-                                chunk.setBlockState(pos, Blocks.STONE.defaultBlockState(), 0);
-                            }
+                            case SOLID -> chunk.setBlockState(pos,
+                                    y < minY + 5 ? Blocks.DEEPSLATE.defaultBlockState()
+                                                 : Blocks.STONE.defaultBlockState(), 0);
                         }
                     } else if (y < seaLevel) {
                         chunk.setBlockState(pos, Blocks.WATER.defaultBlockState(), 0);
@@ -394,6 +376,21 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
                 }
             }
         }
+    }
+
+    /**
+     * Run every cave contributor at this block position in declared order.
+     * Returns the first non-SOLID result, or SOLID if no contributor claims the block.
+     * Short-circuits on the first hit and on Y-range guards.
+     */
+    private static CarveResult sampleCaves(GrandterrainNoiseRouter r,
+                                            int worldX, int y, int worldZ) {
+        for (CaveContributor cave : r.getCaves()) {
+            if (y < cave.minY() || y > cave.maxY()) continue;
+            CarveResult result = cave.sample(worldX, y, worldZ);
+            if (result != CarveResult.SOLID) return result;
+        }
+        return CarveResult.SOLID;
     }
 
     private static double lerp(double t, double a, double b) {

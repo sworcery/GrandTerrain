@@ -1,11 +1,14 @@
 package com.grandterrain.worldgen.noise;
 
 import com.grandterrain.config.ConfigSnapshot;
+import com.grandterrain.worldgen.cave.CaveContributor;
 import com.grandterrain.worldgen.cave.CavernGenerator;
 import com.grandterrain.worldgen.cave.CheeseCaveFunction;
 import com.grandterrain.worldgen.cave.SpaghettiCaveFunction;
 import com.grandterrain.worldgen.cave.UndergroundRiverCarver;
 import com.grandterrain.worldgen.river.RiverDensityFunction;
+
+import java.util.List;
 
 /**
  * Holds all the noise generators needed for world generation.
@@ -14,10 +17,7 @@ import com.grandterrain.worldgen.river.RiverDensityFunction;
 public class GrandterrainNoiseRouter {
 
     private final TerrainDensityFunction terrainDensity;
-    private final CheeseCaveFunction cheeseCaves;
-    private final SpaghettiCaveFunction spaghettiCaves;
-    private final CavernGenerator megaCaverns;
-    private final UndergroundRiverCarver undergroundRivers;
+    private final List<CaveContributor> caves;
     private final RiverDensityFunction surfaceRivers;
     private final ConfigSnapshot config;
     private final long seed;
@@ -26,18 +26,20 @@ public class GrandterrainNoiseRouter {
         this.seed = seed;
         this.config = config;
         this.terrainDensity = new TerrainDensityFunction(seed, config);
-        this.cheeseCaves = new CheeseCaveFunction(seed, config);
-        this.spaghettiCaves = new SpaghettiCaveFunction(seed, config);
-        this.megaCaverns = new CavernGenerator(seed, config);
-        this.undergroundRivers = new UndergroundRiverCarver(seed, config);
+        // Order matters: first non-SOLID result wins. Underground rivers run
+        // first so water claims any block in its tight Y band before cheese/
+        // spaghetti carves it to air. General cave types run after.
+        this.caves = List.of(
+                new UndergroundRiverCarver(seed, config),
+                new CheeseCaveFunction(seed, config),
+                new SpaghettiCaveFunction(seed, config),
+                new CavernGenerator(seed, config)
+        );
         this.surfaceRivers = new RiverDensityFunction(seed, config);
     }
 
     public TerrainDensityFunction getTerrainDensity() { return terrainDensity; }
-    public CheeseCaveFunction getCheeseCaves() { return cheeseCaves; }
-    public SpaghettiCaveFunction getSpaghettiCaves() { return spaghettiCaves; }
-    public CavernGenerator getMegaCaverns() { return megaCaverns; }
-    public UndergroundRiverCarver getUndergroundRivers() { return undergroundRivers; }
+    public List<CaveContributor> getCaves() { return caves; }
     public RiverDensityFunction getSurfaceRivers() { return surfaceRivers; }
     public ConfigSnapshot getConfig() { return config; }
     public long getSeed() { return seed; }
@@ -50,8 +52,5 @@ public class GrandterrainNoiseRouter {
     }
     public double sampleErosion(double x, double z) {
         return terrainDensity.getErosionNoise().sampleMacro(x, z);
-    }
-    public double sampleHumidity(double x, double z) {
-        return terrainDensity.getErosionNoise().sampleDetail(x, z);
     }
 }
