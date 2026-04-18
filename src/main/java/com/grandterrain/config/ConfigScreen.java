@@ -133,14 +133,6 @@ public class ConfigScreen {
         // Structures category
         ConfigCategory structures = builder.getOrCreateCategory(Component.literal("Structures"));
 
-        structures.addEntry(entries.startFloatField(
-                        Component.literal("Structure Density"), config.structureDensity)
-                .setDefaultValue(defaults.structureDensity)
-                .setMin(0.0f).setMax(5.0f)
-                .setTooltip(Component.literal("How frequently structures appear."))
-                .setSaveConsumer(v -> config.structureDensity = v)
-                .build());
-
         structures.addEntry(entries.startBooleanToggle(
                         Component.literal("Enable Castles"), config.enableCastles)
                 .setDefaultValue(defaults.enableCastles)
@@ -157,15 +149,6 @@ public class ConfigScreen {
                         Component.literal("Enable Dungeons"), config.enableDungeons)
                 .setDefaultValue(defaults.enableDungeons)
                 .setSaveConsumer(v -> config.enableDungeons = v)
-                .build());
-
-        // Biomes category
-        ConfigCategory biomes = builder.getOrCreateCategory(Component.literal("Biomes"));
-
-        biomes.addEntry(entries.startBooleanToggle(
-                        Component.literal("Enable Volcanic Regions"), config.enableVolcanicRegions)
-                .setDefaultValue(defaults.enableVolcanicRegions)
-                .setSaveConsumer(v -> config.enableVolcanicRegions = v)
                 .build());
 
         return builder.build();
