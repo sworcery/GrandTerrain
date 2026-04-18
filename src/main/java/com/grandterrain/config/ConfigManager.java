@@ -73,14 +73,10 @@ public class ConfigManager {
         config.riverDepth = getFloat(props, "rivers.depth", config.riverDepth);
 
         config.snowLineBase = getInt(props, "snow.lineBase", config.snowLineBase);
-        config.snowLineVariation = getFloat(props, "snow.lineVariation", config.snowLineVariation);
 
-        config.structureDensity = getFloat(props, "structures.density", config.structureDensity);
         config.enableCastles = getBool(props, "structures.enableCastles", config.enableCastles);
         config.enableRuins = getBool(props, "structures.enableRuins", config.enableRuins);
         config.enableDungeons = getBool(props, "structures.enableDungeons", config.enableDungeons);
-
-        config.enableVolcanicRegions = getBool(props, "biomes.enableVolcanicRegions", config.enableVolcanicRegions);
     }
 
     private static void writeProperties(GrandterrainConfig config, Properties props) {
@@ -100,14 +96,10 @@ public class ConfigManager {
         props.setProperty("rivers.depth", String.valueOf(config.riverDepth));
 
         props.setProperty("snow.lineBase", String.valueOf(config.snowLineBase));
-        props.setProperty("snow.lineVariation", String.valueOf(config.snowLineVariation));
 
-        props.setProperty("structures.density", String.valueOf(config.structureDensity));
         props.setProperty("structures.enableCastles", String.valueOf(config.enableCastles));
         props.setProperty("structures.enableRuins", String.valueOf(config.enableRuins));
         props.setProperty("structures.enableDungeons", String.valueOf(config.enableDungeons));
-
-        props.setProperty("biomes.enableVolcanicRegions", String.valueOf(config.enableVolcanicRegions));
     }
 
     private static float getFloat(Properties props, String key, float def) {

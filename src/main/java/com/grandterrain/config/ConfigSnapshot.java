@@ -19,12 +19,9 @@ public record ConfigSnapshot(
         float riverWidth,
         float riverDepth,
         int snowLineBase,
-        float snowLineVariation,
-        float structureDensity,
         boolean enableCastles,
         boolean enableRuins,
-        boolean enableDungeons,
-        boolean enableVolcanicRegions
+        boolean enableDungeons
 ) {
     public static ConfigSnapshot from(GrandterrainConfig c) {
         return new ConfigSnapshot(
@@ -41,12 +38,9 @@ public record ConfigSnapshot(
                 c.riverWidth,
                 c.riverDepth,
                 c.snowLineBase,
-                c.snowLineVariation,
-                c.structureDensity,
                 c.enableCastles,
                 c.enableRuins,
-                c.enableDungeons,
-                c.enableVolcanicRegions
+                c.enableDungeons
         );
     }
 }

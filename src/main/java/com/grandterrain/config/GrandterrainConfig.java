@@ -22,20 +22,14 @@ public class GrandterrainConfig {
 
     // Snow
     public int snowLineBase = 400;
-    public float snowLineVariation = 50.0f;
 
     // Structures
-    public float structureDensity = 1.0f;
     public boolean enableCastles = true;
     public boolean enableRuins = true;
     public boolean enableDungeons = true;
 
-    // Biomes
-    public boolean enableVolcanicRegions = true;
-
     /**
      * Validates and clamps all config values to safe ranges.
-     * Prevents division by zero, negative dimensions, and other invalid states.
      */
     public void validate() {
         mountainHeightScale = clamp(mountainHeightScale, 1.0f, 10.0f);
@@ -52,15 +46,12 @@ public class GrandterrainConfig {
         riverDepth = clamp(riverDepth, 0.1f, 5.0f);
 
         snowLineBase = clamp(snowLineBase, 100, 800);
-        snowLineVariation = clamp(snowLineVariation, 0.0f, 200.0f);
 
-        structureDensity = clamp(structureDensity, 0.0f, 10.0f);
-
-        // Ensure sea level is within world bounds
+        // Sea level within world bounds
         if (seaLevel < worldMinY + 10) seaLevel = worldMinY + 10;
         if (seaLevel > worldMinY + worldHeight - 10) seaLevel = worldMinY + worldHeight - 10;
 
-        // Snow line must be comfortably above sea level so the transition tiers fit.
+        // Snow line must be comfortably above sea level so transition tiers fit.
         if (snowLineBase <= seaLevel + 50) snowLineBase = seaLevel + 100;
         if (snowLineBase > worldMinY + worldHeight - 5) {
             snowLineBase = worldMinY + worldHeight - 5;
