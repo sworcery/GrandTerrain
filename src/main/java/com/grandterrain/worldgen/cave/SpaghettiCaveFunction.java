@@ -5,22 +5,22 @@ import com.grandterrain.worldgen.noise.ContinentalNoise;
 import com.grandterrain.worldgen.noise.FastNoiseLite;
 
 /**
- * Generates winding tunnel networks using the intersection of two 3D noise fields.
+ * Winding tunnel networks using the intersection of two 3D noise fields.
  * Where both fields are near zero simultaneously, a narrow tunnel is carved.
- *
- * Exits early near the surface and near bedrock to preserve those layers.
  */
-public class SpaghettiCaveFunction {
+public class SpaghettiCaveFunction implements CaveContributor {
 
     private final FastNoiseLite noiseA;
     private final FastNoiseLite noiseB;
     private final FastNoiseLite widthNoise;
     private final int seaLevel;
     private final int bedrockFloor;
+    private final int worldMinY;
 
     public SpaghettiCaveFunction(long seed, ConfigSnapshot config) {
         float frequency = config.caveFrequency();
         this.seaLevel = config.seaLevel();
+        this.worldMinY = config.worldMinY();
         this.bedrockFloor = config.worldMinY() + 16;
 
         noiseA = new FastNoiseLite((int) (seed ^ 0x5A6E770AL));
@@ -44,7 +44,11 @@ public class SpaghettiCaveFunction {
         widthNoise.SetFrequency(1.0f / 60.0f);
     }
 
-    public double sample(double x, double y, double z) {
+    @Override public int minY() { return worldMinY + 5; }
+    @Override public int maxY() { return seaLevel - 5; }
+
+    @Override
+    public CarveResult sample(double x, double y, double z) {
         float fx = ContinentalNoise.wrapToFloat(x);
         float fy = (float) y;
         float fz = ContinentalNoise.wrapToFloat(z);
@@ -56,15 +60,12 @@ public class SpaghettiCaveFunction {
         double tunnelValue = width * width - (a * a + b * b);
 
         if (y > seaLevel - 5) {
-            double surfaceBlend = Math.max(0, (y - (seaLevel - 5)) / 15.0);
-            tunnelValue -= surfaceBlend * 0.5;
+            tunnelValue -= Math.max(0, (y - (seaLevel - 5)) / 15.0) * 0.5;
         }
-
         if (y < bedrockFloor) {
-            double bedrockBlend = Math.max(0, (bedrockFloor - y) / 11.0);
-            tunnelValue -= bedrockBlend * 0.5;
+            tunnelValue -= Math.max(0, (bedrockFloor - y) / 11.0) * 0.5;
         }
 
-        return tunnelValue;
+        return tunnelValue > 0 ? CarveResult.CARVE_AIR : CarveResult.SOLID;
     }
 }

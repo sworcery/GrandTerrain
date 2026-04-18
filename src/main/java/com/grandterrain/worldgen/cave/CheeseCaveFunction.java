@@ -9,19 +9,22 @@ import com.grandterrain.worldgen.noise.FastNoiseLite;
  * Named "cheese caves" because the terrain looks like Swiss cheese.
  * Cavern size increases with depth.
  */
-public class CheeseCaveFunction {
+public class CheeseCaveFunction implements CaveContributor {
 
     private final FastNoiseLite noise;
     private final FastNoiseLite scaleNoise;
     private final float density;
     private final int seaLevel;
     private final int bedrockFloor;
+    private final int worldMinY;
+    private final double depthNormalizer;  // (seaLevel - worldMinY) so depthFactor saturates at 1.0
 
     public CheeseCaveFunction(long seed, ConfigSnapshot config) {
         this.density = config.caveDensity();
         this.seaLevel = config.seaLevel();
-        // Leave 16 blocks of solid deepslate above world floor regardless of config
+        this.worldMinY = config.worldMinY();
         this.bedrockFloor = config.worldMinY() + 16;
+        this.depthNormalizer = Math.max(1.0, seaLevel - worldMinY);
 
         noise = new FastNoiseLite((int) (seed ^ 0xCA7ECA7EL));
         noise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2S);
@@ -36,29 +39,29 @@ public class CheeseCaveFunction {
         scaleNoise.SetFrequency(1.0f / 400.0f);
     }
 
-    public double sample(double x, double y, double z) {
+    @Override public int minY() { return worldMinY + 5; }
+    @Override public int maxY() { return seaLevel - 10; }
+
+    @Override
+    public CarveResult sample(double x, double y, double z) {
         float fx = ContinentalNoise.wrapToFloat(x);
         float fy = (float) (y * 1.5);
         float fz = ContinentalNoise.wrapToFloat(z);
 
         double n = noise.GetNoise(fx, fy, fz);
-
-        double depthFactor = Math.max(0, (seaLevel - y) / 300.0);
+        // Normalize depth by full world range so factor saturates at 1.0 near bedrock
+        // regardless of configured worldMinY/seaLevel.
+        double depthFactor = Math.max(0, Math.min(1.0, (seaLevel - y) / depthNormalizer));
         double threshold = 0.55 - depthFactor * 0.15 * density;
-
-        double scale = scaleNoise.GetNoise(fx, fz) * 0.1;
-        threshold += scale;
+        threshold += scaleNoise.GetNoise(fx, fz) * 0.1;
 
         if (y > seaLevel - 10) {
-            double surfaceBlend = Math.max(0, (y - (seaLevel - 10)) / 20.0);
-            threshold += surfaceBlend * 2.0;
+            threshold += Math.max(0, (y - (seaLevel - 10)) / 20.0) * 2.0;
         }
-
         if (y < bedrockFloor) {
-            double bedrockBlend = Math.max(0, (bedrockFloor - y) / 16.0);
-            threshold += bedrockBlend * 2.0;
+            threshold += Math.max(0, (bedrockFloor - y) / 16.0) * 2.0;
         }
 
-        return n - threshold;
+        return (n - threshold) > 0 ? CarveResult.CARVE_AIR : CarveResult.SOLID;
     }
 }
