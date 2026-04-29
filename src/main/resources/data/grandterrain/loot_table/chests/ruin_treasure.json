@@ -1,0 +1,35 @@
+{
+  "type": "minecraft:chest",
+  "pools": [
+    {
+      "rolls": {
+        "type": "minecraft:uniform",
+        "min_inclusive": 2,
+        "max_inclusive": 4
+      },
+      "entries": [
+        {"type": "minecraft:item", "name": "minecraft:gold_ingot", "weight": 8, "functions": [{"function": "minecraft:set_count", "count": {"type": "minecraft:uniform", "min_inclusive": 1, "max_inclusive": 3}}]},
+        {"type": "minecraft:item", "name": "minecraft:emerald", "weight": 5, "functions": [{"function": "minecraft:set_count", "count": {"type": "minecraft:uniform", "min_inclusive": 1, "max_inclusive": 2}}]},
+        {"type": "minecraft:item", "name": "minecraft:lapis_lazuli", "weight": 7, "functions": [{"function": "minecraft:set_count", "count": {"type": "minecraft:uniform", "min_inclusive": 2, "max_inclusive": 5}}]},
+        {"type": "minecraft:item", "name": "minecraft:iron_ingot", "weight": 8, "functions": [{"function": "minecraft:set_count", "count": {"type": "minecraft:uniform", "min_inclusive": 1, "max_inclusive": 3}}]},
+        {"type": "minecraft:item", "name": "minecraft:coal", "weight": 6, "functions": [{"function": "minecraft:set_count", "count": {"type": "minecraft:uniform", "min_inclusive": 2, "max_inclusive": 4}}]},
+        {"type": "minecraft:item", "name": "minecraft:chainmail_helmet", "weight": 3},
+        {"type": "minecraft:item", "name": "minecraft:chainmail_chestplate", "weight": 2}
+      ]
+    },
+    {
+      "rolls": {
+        "type": "minecraft:uniform",
+        "min_inclusive": 0,
+        "max_inclusive": 1
+      },
+      "entries": [
+        {"type": "minecraft:item", "name": "minecraft:compass", "weight": 5},
+        {"type": "minecraft:item", "name": "minecraft:clock", "weight": 4},
+        {"type": "minecraft:item", "name": "minecraft:book", "weight": 6, "functions": [{"function": "minecraft:set_count", "count": {"type": "minecraft:uniform", "min_inclusive": 1, "max_inclusive": 3}}]},
+        {"type": "minecraft:item", "name": "minecraft:golden_apple", "weight": 2},
+        {"type": "minecraft:item", "name": "minecraft:name_tag", "weight": 3}
+      ]
+    }
+  ]
+}

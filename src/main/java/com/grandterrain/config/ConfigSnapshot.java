@@ -1,10 +1,5 @@
 package com.grandterrain.config;
 
-/**
- * Immutable snapshot of GrandterrainConfig used by worker threads during chunk generation.
- * Taken once per world at generator initialization so that concurrent GUI edits to the
- * mutable {@link GrandterrainConfig} never affect in-progress chunk generation.
- */
 public record ConfigSnapshot(
         float mountainHeightScale,
         float continentalScale,
@@ -19,9 +14,13 @@ public record ConfigSnapshot(
         float riverWidth,
         float riverDepth,
         int snowLineBase,
+        int biomeBlendWidth,
+        float climateBlendWidth,
+        int cavernCenterY,
         boolean enableCastles,
         boolean enableRuins,
-        boolean enableDungeons
+        boolean enableDungeons,
+        boolean enableWatchtowers
 ) {
     public static ConfigSnapshot from(GrandterrainConfig c) {
         return new ConfigSnapshot(
@@ -38,9 +37,13 @@ public record ConfigSnapshot(
                 c.riverWidth,
                 c.riverDepth,
                 c.snowLineBase,
+                c.biomeBlendWidth,
+                c.climateBlendWidth,
+                c.cavernCenterY,
                 c.enableCastles,
                 c.enableRuins,
-                c.enableDungeons
+                c.enableDungeons,
+                c.enableWatchtowers
         );
     }
 }

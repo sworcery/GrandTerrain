@@ -18,6 +18,13 @@ public class GrandterrainBiomes {
     public static final ResourceKey<Biome> DEEP_VALLEY = register("deep_valley");
     public static final ResourceKey<Biome> VOLCANIC_REGION = register("volcanic_region");
 
+    public static final ResourceKey<Biome> DESERT = register("desert");
+    public static final ResourceKey<Biome> SAVANNA = register("savanna");
+    public static final ResourceKey<Biome> SWAMP = register("swamp");
+    public static final ResourceKey<Biome> TUNDRA = register("tundra");
+    public static final ResourceKey<Biome> BIRCH_FOREST = register("birch_forest");
+    public static final ResourceKey<Biome> DARK_FOREST = register("dark_forest");
+
     private static ResourceKey<Biome> register(String name) {
         return ResourceKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("grandterrain", name));
     }

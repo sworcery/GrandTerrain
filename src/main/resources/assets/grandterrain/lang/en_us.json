@@ -9,5 +9,11 @@
   "biome.grandterrain.rocky_highlands": "Rocky Highlands",
   "biome.grandterrain.snow_peaks": "Snow Peaks",
   "biome.grandterrain.deep_valley": "Deep Valley",
-  "biome.grandterrain.volcanic_region": "Volcanic Region"
+  "biome.grandterrain.volcanic_region": "Volcanic Region",
+  "biome.grandterrain.desert": "Desert",
+  "biome.grandterrain.savanna": "Savanna",
+  "biome.grandterrain.swamp": "Swamp",
+  "biome.grandterrain.tundra": "Tundra",
+  "biome.grandterrain.birch_forest": "Birch Forest",
+  "biome.grandterrain.dark_forest": "Dark Forest"
 }
