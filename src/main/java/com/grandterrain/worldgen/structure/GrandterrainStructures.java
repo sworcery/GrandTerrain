@@ -10,6 +10,7 @@ public class GrandterrainStructures {
     public static final StructureType<CastleStructure> CASTLE = () -> CastleStructure.CODEC;
     public static final StructureType<RuinStructure> RUIN = () -> RuinStructure.CODEC;
     public static final StructureType<DungeonStructure> DUNGEON = () -> DungeonStructure.CODEC;
+    public static final StructureType<WatchtowerStructure> WATCHTOWER = () -> WatchtowerStructure.CODEC;
 
     public static void register() {
         Registry.register(BuiltInRegistries.STRUCTURE_TYPE,
@@ -18,5 +19,7 @@ public class GrandterrainStructures {
                 Grandterrain.id("ruin"), RUIN);
         Registry.register(BuiltInRegistries.STRUCTURE_TYPE,
                 Grandterrain.id("dungeon"), DUNGEON);
+        Registry.register(BuiltInRegistries.STRUCTURE_TYPE,
+                Grandterrain.id("watchtower"), WATCHTOWER);
     }
 }

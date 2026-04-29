@@ -1,0 +1,43 @@
+{
+  "type": "minecraft:chest",
+  "pools": [
+    {
+      "rolls": {
+        "type": "minecraft:uniform",
+        "min_inclusive": 2,
+        "max_inclusive": 4
+      },
+      "entries": [
+        {"type": "minecraft:item", "name": "minecraft:diamond", "weight": 5, "functions": [{"function": "minecraft:set_count", "count": {"type": "minecraft:uniform", "min_inclusive": 1, "max_inclusive": 3}}]},
+        {"type": "minecraft:item", "name": "minecraft:emerald", "weight": 6, "functions": [{"function": "minecraft:set_count", "count": {"type": "minecraft:uniform", "min_inclusive": 1, "max_inclusive": 3}}]},
+        {"type": "minecraft:item", "name": "minecraft:gold_ingot", "weight": 8, "functions": [{"function": "minecraft:set_count", "count": {"type": "minecraft:uniform", "min_inclusive": 2, "max_inclusive": 5}}]},
+        {"type": "minecraft:item", "name": "minecraft:iron_ingot", "weight": 10, "functions": [{"function": "minecraft:set_count", "count": {"type": "minecraft:uniform", "min_inclusive": 3, "max_inclusive": 6}}]},
+        {"type": "minecraft:item", "name": "minecraft:golden_apple", "weight": 3},
+        {"type": "minecraft:item", "name": "minecraft:enchanted_book", "weight": 3, "functions": [{"function": "minecraft:enchant_randomly"}]}
+      ]
+    },
+    {
+      "rolls": {
+        "type": "minecraft:uniform",
+        "min_inclusive": 1,
+        "max_inclusive": 2
+      },
+      "entries": [
+        {"type": "minecraft:item", "name": "minecraft:iron_sword", "weight": 6, "functions": [{"function": "minecraft:enchant_with_levels", "levels": {"type": "minecraft:uniform", "min_inclusive": 10, "max_inclusive": 20}}]},
+        {"type": "minecraft:item", "name": "minecraft:iron_chestplate", "weight": 5},
+        {"type": "minecraft:item", "name": "minecraft:diamond_sword", "weight": 2},
+        {"type": "minecraft:item", "name": "minecraft:shield", "weight": 4},
+        {"type": "minecraft:item", "name": "minecraft:crossbow", "weight": 3}
+      ]
+    },
+    {
+      "rolls": 1,
+      "entries": [
+        {"type": "minecraft:item", "name": "minecraft:saddle", "weight": 5},
+        {"type": "minecraft:item", "name": "minecraft:name_tag", "weight": 5},
+        {"type": "minecraft:item", "name": "minecraft:music_disc_13", "weight": 2},
+        {"type": "minecraft:item", "name": "minecraft:music_disc_cat", "weight": 2}
+      ]
+    }
+  ]
+}

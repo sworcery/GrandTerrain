@@ -151,6 +151,12 @@ public class ConfigScreen {
                 .setSaveConsumer(v -> config.enableDungeons = v)
                 .build());
 
+        structures.addEntry(entries.startBooleanToggle(
+                        Component.literal("Enable Watchtowers"), config.enableWatchtowers)
+                .setDefaultValue(defaults.enableWatchtowers)
+                .setSaveConsumer(v -> config.enableWatchtowers = v)
+                .build());
+
         return builder.build();
     }
 }

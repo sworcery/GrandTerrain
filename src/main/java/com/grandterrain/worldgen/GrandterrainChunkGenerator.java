@@ -2,17 +2,21 @@ package com.grandterrain.worldgen;
 
 import com.grandterrain.config.ConfigManager;
 import com.grandterrain.config.ConfigSnapshot;
+import com.grandterrain.worldgen.biome.GrandterrainBiomeSource;
+import com.grandterrain.worldgen.biome.GrandterrainBiomes;
 import com.grandterrain.worldgen.cave.CarveResult;
 import com.grandterrain.worldgen.cave.CaveContributor;
 import com.grandterrain.worldgen.noise.GrandterrainNoiseRouter;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.server.level.WorldGenRegion;
 import net.minecraft.world.level.LevelHeightAccessor;
 import net.minecraft.world.level.NoiseColumn;
 import net.minecraft.world.level.StructureManager;
+import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeManager;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.block.Blocks;
@@ -37,21 +41,16 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
             ).apply(instance, GrandterrainChunkGenerator::new)
     );
 
-    // Interpolation geometry (compile-time constants so divisions become multiplies)
     private static final int INTERP_H = 4;
     private static final int INTERP_V = 8;
     private static final double INV_INTERP_H = 1.0 / INTERP_H;
     private static final double INV_INTERP_V = 1.0 / INTERP_V;
-    private static final int SAMPLES_XZ = 16 / INTERP_H + 1;  // 5
+    private static final int SAMPLES_XZ = 16 / INTERP_H + 1;
 
-    /** Immutable snapshot taken at construction; GUI edits apply only to new worlds. */
+    private static final int BEDROCK_LAYERS = 5;
+    private static final int DEEPSLATE_TRANSITION_THICKNESS = 64;
+
     private final ConfigSnapshot config;
-
-    /**
-     * Noise router keyed by world seed. Seed is installed by {@link #createState}
-     * before any chunk work is scheduled, making worker-thread reads safe via
-     * the happens-before from volatile.
-     */
     private volatile GrandterrainNoiseRouter noiseRouter;
 
     public GrandterrainChunkGenerator(BiomeSource biomeSource) {
@@ -67,17 +66,18 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
     @Override
     public ChunkGeneratorStructureState createState(
             HolderLookup<StructureSet> structureSetLookup, RandomState randomState, long seed) {
-        // This is called once per world during generator bootstrap, before any chunk
-        // generation runs. Seed the router here so every subsequent call sees it.
         this.noiseRouter = new GrandterrainNoiseRouter(seed, config);
+
+        if (biomeSource instanceof GrandterrainBiomeSource gbs) {
+            gbs.initClimate(seed);
+        }
+
         return super.createState(structureSetLookup, randomState, seed);
     }
 
     private GrandterrainNoiseRouter router() {
         GrandterrainNoiseRouter r = noiseRouter;
         if (r == null) {
-            // Defensive fallback: should never happen in normal operation since
-            // createState runs first. Throw rather than silently use seed 0.
             throw new IllegalStateException(
                     "GrandterrainChunkGenerator accessed before createState(); seed not initialized");
         }
@@ -92,8 +92,6 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
     public void applyCarvers(WorldGenRegion level, long seed, RandomState randomState,
                              BiomeManager biomeManager, StructureManager structureManager,
                              ChunkAccess chunk) {
-        // Caves are integrated directly into fillFromNoise for coherence with the
-        // density interpolation; no vanilla carver pass.
     }
 
     // -------------------------------------------------------------------------
@@ -126,7 +124,6 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
             }
         }
 
-        // Re-prime both heightmaps after surface rules may have added snow/sand on top.
         Heightmap.primeHeightmaps(chunk,
                 EnumSet.of(Heightmap.Types.OCEAN_FLOOR_WG, Heightmap.Types.WORLD_SURFACE_WG));
     }
@@ -151,55 +148,184 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
         final int minY = chunk.getMinY();
 
         if (surfaceY < seaLevel - 5) {
-            // Ocean floor
-            for (int depth = 0; depth < 3 && surfaceY - depth >= minY; depth++) {
-                pos.set(localX, surfaceY - depth, localZ);
-                chunk.setBlockState(pos, depth == 0 ? Blocks.GRAVEL.defaultBlockState() :
-                        Blocks.SANDSTONE.defaultBlockState(), 0);
-            }
-        } else if (surfaceY < seaLevel + 3) {
-            // Beach
-            for (int depth = 0; depth < 4 && surfaceY - depth >= minY; depth++) {
-                pos.set(localX, surfaceY - depth, localZ);
-                chunk.setBlockState(pos, depth < 2 ? Blocks.SAND.defaultBlockState() :
-                        Blocks.SANDSTONE.defaultBlockState(), 0);
-            }
-        } else if (surfaceY > snowLine) {
-            // Snow peaks
-            pos.set(localX, surfaceY, localZ);
-            chunk.setBlockState(pos, Blocks.SNOW_BLOCK.defaultBlockState(), 0);
-            if (surfaceY + 1 <= minY + chunk.getHeight() - 1) {
-                pos.set(localX, surfaceY + 1, localZ);
-                chunk.setBlockState(pos, Blocks.SNOW.defaultBlockState(), 0);
-            }
+            applyOceanFloor(chunk, localX, localZ, surfaceY, minY, pos);
+            return;
+        }
+        if (surfaceY < seaLevel + 3) {
+            applyBeach(chunk, localX, localZ, surfaceY, minY, pos);
+            return;
+        }
+
+        int biomeQueryY = config.seaLevel() + 10;
+        Holder<Biome> biome = chunk.getNoiseBiome(worldX >> 2, biomeQueryY >> 2, worldZ >> 2);
+
+        if (biome.is(GrandterrainBiomes.DESERT)) {
+            applyDesertSurface(chunk, localX, localZ, surfaceY, minY, pos);
+            return;
+        }
+        if (biome.is(GrandterrainBiomes.SWAMP)) {
+            applySwampSurface(chunk, localX, localZ, surfaceY, minY, worldX, worldZ, pos);
+            return;
+        }
+        if (biome.is(GrandterrainBiomes.TUNDRA)) {
+            applyTundraSurface(chunk, localX, localZ, surfaceY, minY, worldX, worldZ, pos);
+            return;
+        }
+        if (biome.is(GrandterrainBiomes.SAVANNA)) {
+            applySavannaSurface(chunk, localX, localZ, surfaceY, minY, worldX, worldZ, pos);
+            return;
+        }
+        if (biome.is(GrandterrainBiomes.DARK_FOREST)) {
+            applyDarkForestSurface(chunk, localX, localZ, surfaceY, minY, worldX, worldZ, pos);
+            return;
+        }
+        if (biome.is(GrandterrainBiomes.SNOW_PEAKS)) {
+            applySnowPeaks(chunk, localX, localZ, surfaceY, minY, pos);
+            return;
+        }
+
+        if (surfaceY > snowLine) {
+            applySnowPeaks(chunk, localX, localZ, surfaceY, minY, pos);
         } else if (surfaceY > snowLine - 80) {
-            // Transition zone: patchy snow
-            pos.set(localX, surfaceY, localZ);
-            boolean isSnow = ((worldX * 31 + worldZ * 17) & 3) == 0;
-            if (isSnow && surfaceY > snowLine - 40) {
-                chunk.setBlockState(pos, Blocks.SNOW_BLOCK.defaultBlockState(), 0);
-            } else {
-                chunk.setBlockState(pos, Blocks.GRASS_BLOCK.defaultBlockState(), 0);
-                for (int depth = 1; depth < 4 && surfaceY - depth >= minY; depth++) {
-                    pos.set(localX, surfaceY - depth, localZ);
-                    chunk.setBlockState(pos, Blocks.DIRT.defaultBlockState(), 0);
-                }
-            }
+            applySnowTransition(chunk, localX, localZ, surfaceY, minY, snowLine, worldX, worldZ, pos);
         } else if (surfaceY > snowLine - 160) {
-            // Rocky highlands (relative to config, not magic 300)
-            pos.set(localX, surfaceY, localZ);
-            boolean isGravel = ((worldX * 13 + worldZ * 7) & 7) == 0;
-            if (isGravel) {
-                chunk.setBlockState(pos, Blocks.GRAVEL.defaultBlockState(), 0);
-            }
+            applyRockyHighlands(chunk, localX, localZ, surfaceY, minY, worldX, worldZ, pos);
         } else {
-            // Grassland
-            pos.set(localX, surfaceY, localZ);
+            applyGrassland(chunk, localX, localZ, surfaceY, minY, pos);
+        }
+    }
+
+    private void applyOceanFloor(ChunkAccess chunk, int localX, int localZ,
+                                  int surfaceY, int minY, BlockPos.MutableBlockPos pos) {
+        for (int depth = 0; depth < 3 && surfaceY - depth >= minY; depth++) {
+            pos.set(localX, surfaceY - depth, localZ);
+            chunk.setBlockState(pos, depth == 0 ? Blocks.GRAVEL.defaultBlockState() :
+                    Blocks.SANDSTONE.defaultBlockState(), 0);
+        }
+    }
+
+    private void applyBeach(ChunkAccess chunk, int localX, int localZ,
+                             int surfaceY, int minY, BlockPos.MutableBlockPos pos) {
+        for (int depth = 0; depth < 4 && surfaceY - depth >= minY; depth++) {
+            pos.set(localX, surfaceY - depth, localZ);
+            chunk.setBlockState(pos, depth < 2 ? Blocks.SAND.defaultBlockState() :
+                    Blocks.SANDSTONE.defaultBlockState(), 0);
+        }
+    }
+
+    private void applySnowPeaks(ChunkAccess chunk, int localX, int localZ,
+                                 int surfaceY, int minY, BlockPos.MutableBlockPos pos) {
+        pos.set(localX, surfaceY, localZ);
+        chunk.setBlockState(pos, Blocks.SNOW_BLOCK.defaultBlockState(), 0);
+        if (surfaceY + 1 <= minY + chunk.getHeight() - 1) {
+            pos.set(localX, surfaceY + 1, localZ);
+            chunk.setBlockState(pos, Blocks.SNOW.defaultBlockState(), 0);
+        }
+    }
+
+    private void applySnowTransition(ChunkAccess chunk, int localX, int localZ,
+                                      int surfaceY, int minY, int snowLine,
+                                      int worldX, int worldZ, BlockPos.MutableBlockPos pos) {
+        pos.set(localX, surfaceY, localZ);
+        boolean isSnow = ((worldX * 31 + worldZ * 17) & 3) == 0;
+        if (isSnow && surfaceY > snowLine - 40) {
+            chunk.setBlockState(pos, Blocks.SNOW_BLOCK.defaultBlockState(), 0);
+        } else {
             chunk.setBlockState(pos, Blocks.GRASS_BLOCK.defaultBlockState(), 0);
             for (int depth = 1; depth < 4 && surfaceY - depth >= minY; depth++) {
                 pos.set(localX, surfaceY - depth, localZ);
                 chunk.setBlockState(pos, Blocks.DIRT.defaultBlockState(), 0);
             }
+        }
+    }
+
+    private void applyRockyHighlands(ChunkAccess chunk, int localX, int localZ,
+                                      int surfaceY, int minY,
+                                      int worldX, int worldZ, BlockPos.MutableBlockPos pos) {
+        pos.set(localX, surfaceY, localZ);
+        boolean isGravel = ((worldX * 13 + worldZ * 7) & 7) == 0;
+        if (isGravel) {
+            chunk.setBlockState(pos, Blocks.GRAVEL.defaultBlockState(), 0);
+        }
+    }
+
+    private void applyGrassland(ChunkAccess chunk, int localX, int localZ,
+                                 int surfaceY, int minY, BlockPos.MutableBlockPos pos) {
+        pos.set(localX, surfaceY, localZ);
+        chunk.setBlockState(pos, Blocks.GRASS_BLOCK.defaultBlockState(), 0);
+        for (int depth = 1; depth < 4 && surfaceY - depth >= minY; depth++) {
+            pos.set(localX, surfaceY - depth, localZ);
+            chunk.setBlockState(pos, Blocks.DIRT.defaultBlockState(), 0);
+        }
+    }
+
+    private void applyDesertSurface(ChunkAccess chunk, int localX, int localZ,
+                                     int surfaceY, int minY, BlockPos.MutableBlockPos pos) {
+        for (int depth = 0; depth < 4 && surfaceY - depth >= minY; depth++) {
+            pos.set(localX, surfaceY - depth, localZ);
+            chunk.setBlockState(pos, depth < 3 ? Blocks.SAND.defaultBlockState() :
+                    Blocks.SANDSTONE.defaultBlockState(), 0);
+        }
+    }
+
+    private void applySwampSurface(ChunkAccess chunk, int localX, int localZ,
+                                    int surfaceY, int minY,
+                                    int worldX, int worldZ, BlockPos.MutableBlockPos pos) {
+        pos.set(localX, surfaceY, localZ);
+        chunk.setBlockState(pos, Blocks.GRASS_BLOCK.defaultBlockState(), 0);
+        for (int depth = 1; depth < 4 && surfaceY - depth >= minY; depth++) {
+            pos.set(localX, surfaceY - depth, localZ);
+            boolean isClay = ((worldX * 11 + worldZ * 23) & 7) == 0;
+            chunk.setBlockState(pos, isClay ? Blocks.CLAY.defaultBlockState() :
+                    Blocks.DIRT.defaultBlockState(), 0);
+        }
+    }
+
+    private void applyTundraSurface(ChunkAccess chunk, int localX, int localZ,
+                                     int surfaceY, int minY,
+                                     int worldX, int worldZ, BlockPos.MutableBlockPos pos) {
+        pos.set(localX, surfaceY, localZ);
+        boolean isSnow = ((worldX * 31 + worldZ * 17) & 3) < 2;
+        if (isSnow) {
+            chunk.setBlockState(pos, Blocks.SNOW_BLOCK.defaultBlockState(), 0);
+            if (surfaceY + 1 <= minY + chunk.getHeight() - 1) {
+                pos.set(localX, surfaceY + 1, localZ);
+                chunk.setBlockState(pos, Blocks.SNOW.defaultBlockState(), 0);
+            }
+        } else {
+            boolean isPodzol = ((worldX * 7 + worldZ * 19) & 3) == 0;
+            chunk.setBlockState(pos, isPodzol ? Blocks.PODZOL.defaultBlockState() :
+                    Blocks.COARSE_DIRT.defaultBlockState(), 0);
+        }
+        for (int depth = 1; depth < 3 && surfaceY - depth >= minY; depth++) {
+            pos.set(localX, surfaceY - depth, localZ);
+            chunk.setBlockState(pos, Blocks.DIRT.defaultBlockState(), 0);
+        }
+    }
+
+    private void applySavannaSurface(ChunkAccess chunk, int localX, int localZ,
+                                      int surfaceY, int minY,
+                                      int worldX, int worldZ, BlockPos.MutableBlockPos pos) {
+        pos.set(localX, surfaceY, localZ);
+        boolean isCoarse = ((worldX * 13 + worldZ * 29) & 7) == 0;
+        chunk.setBlockState(pos, isCoarse ? Blocks.COARSE_DIRT.defaultBlockState() :
+                Blocks.GRASS_BLOCK.defaultBlockState(), 0);
+        for (int depth = 1; depth < 4 && surfaceY - depth >= minY; depth++) {
+            pos.set(localX, surfaceY - depth, localZ);
+            chunk.setBlockState(pos, Blocks.DIRT.defaultBlockState(), 0);
+        }
+    }
+
+    private void applyDarkForestSurface(ChunkAccess chunk, int localX, int localZ,
+                                         int surfaceY, int minY,
+                                         int worldX, int worldZ, BlockPos.MutableBlockPos pos) {
+        pos.set(localX, surfaceY, localZ);
+        boolean isPodzol = ((worldX * 17 + worldZ * 31) & 7) < 2;
+        chunk.setBlockState(pos, isPodzol ? Blocks.PODZOL.defaultBlockState() :
+                Blocks.GRASS_BLOCK.defaultBlockState(), 0);
+        for (int depth = 1; depth < 4 && surfaceY - depth >= minY; depth++) {
+            pos.set(localX, surfaceY - depth, localZ);
+            chunk.setBlockState(pos, Blocks.DIRT.defaultBlockState(), 0);
         }
     }
 
@@ -211,9 +337,6 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
     public CompletableFuture<ChunkAccess> fillFromNoise(Blender blender, RandomState randomState,
                                                          StructureManager structureManager,
                                                          ChunkAccess chunk) {
-        // Execute synchronously on the worker thread that Minecraft provided.
-        // Mojang already parallelizes chunk generation at a higher level; submitting
-        // to ForkJoinPool.commonPool() competes with those workers and risks deadlock.
         generateTerrain(chunk);
         return CompletableFuture.completedFuture(chunk);
     }
@@ -227,10 +350,11 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
         int maxY = minY + chunk.getHeight() - 1;
         int seaLevel = config.seaLevel();
 
+        int deepslateTop = minY + DEEPSLATE_TRANSITION_THICKNESS;
+
         int totalHeight = maxY - minY + 1;
         int samplesY = totalHeight / INTERP_V + 1;
 
-        // Layout: [sx][sz][sy] -- y innermost so the trilinear inner loop walks sequentially.
         double[][][] densityGrid = new double[SAMPLES_XZ][SAMPLES_XZ][samplesY];
         for (int sx = 0; sx < SAMPLES_XZ; sx++) {
             for (int sz = 0; sz < SAMPLES_XZ; sz++) {
@@ -247,7 +371,7 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
 
         for (int localX = 0; localX < 16; localX++) {
-            int cellX = localX >> 2;               // / INTERP_H when INTERP_H=4
+            int cellX = localX >> 2;
             int nextCellX = Math.min(cellX + 1, SAMPLES_XZ - 1);
             double fracX = (localX & 3) * INV_INTERP_H;
             int worldX = chunkX + localX;
@@ -268,8 +392,6 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
                     int nextCellY = Math.min(cellY + 1, samplesY - 1);
                     double fracY = ((y - minY) % INTERP_V) * INV_INTERP_V;
 
-                    // Trilinear interpolation; y innermost on each column means
-                    // sequential memory access along the hot dimension.
                     double d000 = col00[cellY];
                     double d100 = col10[cellY];
                     double d010 = col00[nextCellY];
@@ -291,7 +413,9 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
 
                     pos.set(localX, y, localZ);
 
-                    if (density > 0) {
+                    if (y < minY + BEDROCK_LAYERS) {
+                        chunk.setBlockState(pos, Blocks.BEDROCK.defaultBlockState(), 0);
+                    } else if (density > 0) {
                         CarveResult carve = sampleCaves(r, worldX, y, worldZ);
 
                         switch (carve) {
@@ -301,11 +425,10 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
                                 if (y < minY + 20) {
                                     chunk.setBlockState(pos, Blocks.LAVA.defaultBlockState(), 0);
                                 }
-                                // else default AIR
                             }
                             case SOLID -> chunk.setBlockState(pos,
-                                    y < minY + 5 ? Blocks.DEEPSLATE.defaultBlockState()
-                                                 : Blocks.STONE.defaultBlockState(), 0);
+                                    selectStoneBlock(y, minY, deepslateTop, worldX, worldZ),
+                                    0);
                         }
                     } else if (y < seaLevel) {
                         chunk.setBlockState(pos, Blocks.WATER.defaultBlockState(), 0);
@@ -318,6 +441,25 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
 
         Heightmap.primeHeightmaps(chunk,
                 EnumSet.of(Heightmap.Types.OCEAN_FLOOR_WG, Heightmap.Types.WORLD_SURFACE_WG));
+    }
+
+    private static BlockState selectStoneBlock(int y, int minY, int deepslateTop,
+                                                int worldX, int worldZ) {
+        if (y < minY + BEDROCK_LAYERS + 3) {
+            return Blocks.DEEPSLATE.defaultBlockState();
+        }
+
+        if (y < deepslateTop) {
+            double progress = (double) (y - minY) / DEEPSLATE_TRANSITION_THICKNESS;
+            int hash = (worldX * 31 + worldZ * 17 + y * 13) & 255;
+            double threshold = progress * progress;
+            if (hash < (int) (threshold * 255)) {
+                return Blocks.STONE.defaultBlockState();
+            }
+            return Blocks.DEEPSLATE.defaultBlockState();
+        }
+
+        return Blocks.STONE.defaultBlockState();
     }
 
     private void applySurfaceRivers(ChunkAccess chunk, GrandterrainNoiseRouter r,
@@ -334,7 +476,6 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
 
                 int carveDepth = (int) Math.ceil(riverCarving);
 
-                // Find surface and verify enough solid blocks below for a real channel.
                 int surfaceY = minY - 1;
                 int solidCount = 0;
                 for (int y = maxY; y >= minY; y--) {
@@ -345,7 +486,6 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
                         solidCount++;
                         if (solidCount >= carveDepth + 2) break;
                     } else if (surfaceY >= 0) {
-                        // Hit air below the surface = cave roof, abort this column.
                         surfaceY = -1;
                         break;
                     }
@@ -378,11 +518,6 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
         }
     }
 
-    /**
-     * Run every cave contributor at this block position in declared order.
-     * Returns the first non-SOLID result, or SOLID if no contributor claims the block.
-     * Short-circuits on the first hit and on Y-range guards.
-     */
     private static CarveResult sampleCaves(GrandterrainNoiseRouter r,
                                             int worldX, int y, int worldZ) {
         for (CaveContributor cave : r.getCaves()) {
@@ -399,7 +534,6 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
 
     @Override
     public void spawnOriginalMobs(WorldGenRegion level) {
-        // Default - vanilla mob spawning via biome settings.
     }
 
     @Override
@@ -409,7 +543,6 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
         int minY = level.getMinY();
         int maxY = minY + level.getHeight() - 1;
 
-        // Use the dedicated surface-height function (no Y depth solve).
         double surfaceH = r.getTerrainDensity().computeSurfaceHeight(x, z);
         int est = (int) Math.floor(surfaceH) + 1;
         if (est < minY) return minY;
@@ -424,14 +557,16 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
         int height = level.getHeight();
         BlockState[] states = new BlockState[height];
         int seaLevel = config.seaLevel();
+        int deepslateTop = minY + DEEPSLATE_TRANSITION_THICKNESS;
 
-        // Use surface height solve to split air/water/stone quickly; skip caves.
         double surfaceH = r.getTerrainDensity().computeSurfaceHeight(x, z);
 
         for (int i = 0; i < height; i++) {
             int y = minY + i;
-            if (y <= surfaceH) {
-                states[i] = y < minY + 5
+            if (y < minY + BEDROCK_LAYERS) {
+                states[i] = Blocks.BEDROCK.defaultBlockState();
+            } else if (y <= surfaceH) {
+                states[i] = y < deepslateTop
                         ? Blocks.DEEPSLATE.defaultBlockState()
                         : Blocks.STONE.defaultBlockState();
             } else if (y < seaLevel) {

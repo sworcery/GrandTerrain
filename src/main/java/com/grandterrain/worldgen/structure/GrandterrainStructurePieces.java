@@ -16,6 +16,9 @@ public class GrandterrainStructurePieces {
     public static final StructurePieceType DUNGEON_PIECE =
             register("dungeon_piece", DungeonStructure.DungeonPiece::new);
 
+    public static final StructurePieceType WATCHTOWER_PIECE =
+            register("watchtower_piece", WatchtowerStructure.WatchtowerPiece::new);
+
     private static StructurePieceType register(String name, StructurePieceType type) {
         return Registry.register(BuiltInRegistries.STRUCTURE_PIECE,
                 Grandterrain.id(name), type);

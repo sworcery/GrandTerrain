@@ -20,17 +20,20 @@ public class GrandterrainConfig {
     public float riverWidth = 1.0f;
     public float riverDepth = 1.0f;
 
-    // Snow
+    // Snow & Climate
     public int snowLineBase = 400;
+    public int biomeBlendWidth = 4;
+    public float climateBlendWidth = 0.05f;
+
+    // Caverns
+    public int cavernCenterY = -100;
 
     // Structures
     public boolean enableCastles = true;
     public boolean enableRuins = true;
     public boolean enableDungeons = true;
+    public boolean enableWatchtowers = true;
 
-    /**
-     * Validates and clamps all config values to safe ranges.
-     */
     public void validate() {
         mountainHeightScale = clamp(mountainHeightScale, 1.0f, 10.0f);
         continentalScale = clamp(continentalScale, 0.1f, 5.0f);
@@ -46,12 +49,13 @@ public class GrandterrainConfig {
         riverDepth = clamp(riverDepth, 0.1f, 5.0f);
 
         snowLineBase = clamp(snowLineBase, 100, 800);
+        biomeBlendWidth = clamp(biomeBlendWidth, 0, 12);
+        climateBlendWidth = clamp(climateBlendWidth, 0.0f, 0.2f);
+        cavernCenterY = clamp(cavernCenterY, -300, 0);
 
-        // Sea level within world bounds
         if (seaLevel < worldMinY + 10) seaLevel = worldMinY + 10;
         if (seaLevel > worldMinY + worldHeight - 10) seaLevel = worldMinY + worldHeight - 10;
 
-        // Snow line must be comfortably above sea level so transition tiers fit.
         if (snowLineBase <= seaLevel + 50) snowLineBase = seaLevel + 100;
         if (snowLineBase > worldMinY + worldHeight - 5) {
             snowLineBase = worldMinY + worldHeight - 5;
