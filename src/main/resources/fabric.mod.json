@@ -5,7 +5,9 @@
   "name": "GrandTerrain",
   "description": "Massive realistic world generation with towering mountains, deep caves, and custom biomes.",
   "authors": ["GrandTerrain Team"],
-  "contact": {},
+  "contact": {
+    "email": "sworcery@gmail.com"
+  },
   "license": "MIT",
   "icon": "assets/grandterrain/icon.png",
   "environment": "*",
