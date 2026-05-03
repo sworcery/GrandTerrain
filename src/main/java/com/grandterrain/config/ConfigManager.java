@@ -73,10 +73,15 @@ public class ConfigManager {
         config.riverDepth = getFloat(props, "rivers.depth", config.riverDepth);
 
         config.snowLineBase = getInt(props, "snow.lineBase", config.snowLineBase);
+        config.biomeBlendWidth = getInt(props, "snow.biomeBlendWidth", config.biomeBlendWidth);
+        config.climateBlendWidth = getFloat(props, "snow.climateBlendWidth", config.climateBlendWidth);
+
+        config.cavernCenterY = getInt(props, "caves.cavernCenterY", config.cavernCenterY);
 
         config.enableCastles = getBool(props, "structures.enableCastles", config.enableCastles);
         config.enableRuins = getBool(props, "structures.enableRuins", config.enableRuins);
         config.enableDungeons = getBool(props, "structures.enableDungeons", config.enableDungeons);
+        config.enableWatchtowers = getBool(props, "structures.enableWatchtowers", config.enableWatchtowers);
     }
 
     private static void writeProperties(GrandterrainConfig config, Properties props) {
@@ -96,10 +101,15 @@ public class ConfigManager {
         props.setProperty("rivers.depth", String.valueOf(config.riverDepth));
 
         props.setProperty("snow.lineBase", String.valueOf(config.snowLineBase));
+        props.setProperty("snow.biomeBlendWidth", String.valueOf(config.biomeBlendWidth));
+        props.setProperty("snow.climateBlendWidth", String.valueOf(config.climateBlendWidth));
+
+        props.setProperty("caves.cavernCenterY", String.valueOf(config.cavernCenterY));
 
         props.setProperty("structures.enableCastles", String.valueOf(config.enableCastles));
         props.setProperty("structures.enableRuins", String.valueOf(config.enableRuins));
         props.setProperty("structures.enableDungeons", String.valueOf(config.enableDungeons));
+        props.setProperty("structures.enableWatchtowers", String.valueOf(config.enableWatchtowers));
     }
 
     private static float getFloat(Properties props, String key, float def) {

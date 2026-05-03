@@ -73,7 +73,8 @@
     ],
     [
       "minecraft:forest_rock",
-      "minecraft:patch_dead_bush"
+      "minecraft:patch_dead_bush",
+      "minecraft:patch_grass_normal"
     ],
     [
       "minecraft:freeze_top_layer"

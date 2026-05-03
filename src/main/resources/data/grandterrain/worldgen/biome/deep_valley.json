@@ -76,10 +76,13 @@
     [
       "minecraft:trees_birch_and_oak",
       "minecraft:flower_default",
+      "minecraft:flower_flower_forest",
       "minecraft:patch_grass_forest",
+      "minecraft:patch_tall_grass",
       "minecraft:patch_large_fern",
       "minecraft:brown_mushroom_normal",
-      "minecraft:red_mushroom_normal"
+      "minecraft:red_mushroom_normal",
+      "minecraft:vines"
     ],
     [
       "minecraft:freeze_top_layer"

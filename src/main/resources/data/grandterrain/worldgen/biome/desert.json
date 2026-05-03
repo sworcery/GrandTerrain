@@ -72,7 +72,8 @@
     ],
     [
       "minecraft:patch_dead_bush",
-      "minecraft:patch_cactus"
+      "minecraft:patch_cactus",
+      "minecraft:patch_sugar_cane"
     ],
     [
       "minecraft:freeze_top_layer"

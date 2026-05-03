@@ -77,7 +77,9 @@
       "minecraft:flower_meadow",
       "minecraft:flower_flower_forest",
       "minecraft:patch_grass_plain",
-      "minecraft:forest_rock"
+      "minecraft:patch_tall_grass",
+      "minecraft:forest_rock",
+      "minecraft:patch_berry_bush"
     ],
     [
       "minecraft:freeze_top_layer"

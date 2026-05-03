@@ -15,11 +15,13 @@ public class CavernGenerator implements CaveContributor {
     private final boolean enabled;
     private final int seaLevel;
     private final int bedrockFloor;
+    private final int cavernCenterY;
 
     public CavernGenerator(long seed, ConfigSnapshot config) {
         this.enabled = config.enableMegaCaverns();
         this.seaLevel = config.seaLevel();
         this.bedrockFloor = config.worldMinY() + 30;
+        this.cavernCenterY = config.cavernCenterY();
 
         cellNoise = new FastNoiseLite((int) (seed ^ 0xCA4EC0DEL));
         cellNoise.SetNoiseType(FastNoiseLite.NoiseType.Cellular);
@@ -51,15 +53,15 @@ public class CavernGenerator implements CaveContributor {
 
         double proximity = 1.0 - (cellDist / cavernThreshold);
         double cavernRadius = 25.0 + proximity * 35.0;
-        double cavernCenterY = -100.0 + floorNoise.GetNoise(fx * 0.5f, fz * 0.5f) * 40.0;
-        double verticalDist = Math.abs(y - cavernCenterY);
+        double centerY = this.cavernCenterY + floorNoise.GetNoise(fx * 0.5f, fz * 0.5f) * 40.0;
+        double verticalDist = Math.abs(y - centerY);
         double verticalRadius = cavernRadius * 0.6;
 
         if (verticalDist > verticalRadius) return CarveResult.SOLID;
 
         double verticalFade = 1.0 - (verticalDist / verticalRadius);
         double floorOffset = floorNoise.GetNoise(fx, (float) y, fz) * 8.0;
-        double floorY = cavernCenterY - verticalRadius + 5.0 + floorOffset;
+        double floorY = centerY - verticalRadius + 5.0 + floorOffset;
 
         if (y < floorY) return CarveResult.SOLID;
 

@@ -80,9 +80,12 @@
       "minecraft:trees_swamp",
       "minecraft:flower_swamp",
       "minecraft:patch_grass_normal",
+      "minecraft:patch_tall_grass",
       "minecraft:patch_waterlily",
       "minecraft:brown_mushroom_swamp",
-      "minecraft:red_mushroom_swamp"
+      "minecraft:red_mushroom_swamp",
+      "minecraft:vines",
+      "minecraft:patch_sugar_cane"
     ],
     [
       "minecraft:freeze_top_layer"

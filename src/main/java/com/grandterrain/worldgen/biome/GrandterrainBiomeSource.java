@@ -119,6 +119,9 @@ public class GrandterrainBiomeSource extends BiomeSource {
 
         this.lushCaves = biomeGetter.getOrThrow(Biomes.LUSH_CAVES);
         this.deepDark = biomeGetter.getOrThrow(Biomes.DEEP_DARK);
+
+        this.blendY = config.biomeBlendWidth();
+        this.blendClimate = config.climateBlendWidth();
     }
 
     public void initClimate(long seed) {
@@ -155,8 +158,8 @@ public class GrandterrainBiomeSource extends BiomeSource {
         );
     }
 
-    private static final int BLEND_Y = 4;
-    private static final double BLEND_CLIMATE = 0.05;
+    private final int blendY;
+    private final double blendClimate;
 
     @Override
     public Holder<Biome> getNoiseBiome(int x, int y, int z, Climate.Sampler sampler) {
@@ -204,17 +207,19 @@ public class GrandterrainBiomeSource extends BiomeSource {
     }
 
     private int altitudeJitter(int blockX, int blockZ) {
+        if (blendY <= 0) return 0;
         int bx = blockX >> 2;
         int bz = blockZ >> 2;
         int hash = ((bx * 73856093) ^ (bz * 83492791)) & 0xFF;
-        return (hash * (2 * BLEND_Y + 1)) / 256 - BLEND_Y;
+        return (hash * (2 * blendY + 1)) / 256 - blendY;
     }
 
     private double climateJitter(int blockX, int blockZ, int axis) {
+        if (blendClimate <= 0.0) return 0.0;
         int bx = blockX >> 2;
         int bz = blockZ >> 2;
         int hash = ((bx * 19349669 + axis * 73856093) ^ (bz * 83492791)) & 0xFF;
-        return ((double) hash / 256.0 - 0.5) * 2.0 * BLEND_CLIMATE;
+        return ((double) hash / 256.0 - 0.5) * 2.0 * blendClimate;
     }
 
     private Holder<Biome> selectLowMidBiome(double temp, double humid) {
