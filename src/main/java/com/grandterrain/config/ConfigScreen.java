@@ -100,6 +100,14 @@ public class ConfigScreen {
                 .setSaveConsumer(v -> config.enableUndergroundRivers = v)
                 .build());
 
+        caves.addEntry(entries.startIntField(
+                        Component.literal("Cavern Center Y"), config.cavernCenterY)
+                .setDefaultValue(defaults.cavernCenterY)
+                .setMin(-300).setMax(0)
+                .setTooltip(Component.literal("Y level where mega caverns center. Lower = deeper caverns."))
+                .setSaveConsumer(v -> config.cavernCenterY = v)
+                .build());
+
         // Rivers category
         ConfigCategory rivers = builder.getOrCreateCategory(Component.literal("Rivers"));
 
@@ -128,6 +136,22 @@ public class ConfigScreen {
                 .setMin(200).setMax(600)
                 .setTooltip(Component.literal("Altitude where snow starts."))
                 .setSaveConsumer(v -> config.snowLineBase = v)
+                .build());
+
+        snow.addEntry(entries.startIntField(
+                        Component.literal("Biome Blend Width"), config.biomeBlendWidth)
+                .setDefaultValue(defaults.biomeBlendWidth)
+                .setMin(0).setMax(12)
+                .setTooltip(Component.literal("Altitude jitter in blocks at biome boundaries. 0 = sharp edges."))
+                .setSaveConsumer(v -> config.biomeBlendWidth = v)
+                .build());
+
+        snow.addEntry(entries.startFloatField(
+                        Component.literal("Climate Blend Width"), config.climateBlendWidth)
+                .setDefaultValue(defaults.climateBlendWidth)
+                .setMin(0.0f).setMax(0.2f)
+                .setTooltip(Component.literal("Noise jitter at climate zone boundaries. Higher = smoother transitions."))
+                .setSaveConsumer(v -> config.climateBlendWidth = v)
                 .build());
 
         // Structures category

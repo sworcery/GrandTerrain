@@ -71,7 +71,8 @@
       "minecraft:spring_lava"
     ],
     [
-      "minecraft:seagrass_deep"
+      "minecraft:seagrass_deep",
+      "minecraft:kelp"
     ],
     [
       "minecraft:freeze_top_layer"

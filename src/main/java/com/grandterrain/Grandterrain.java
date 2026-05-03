@@ -2,6 +2,7 @@ package com.grandterrain;
 
 import com.grandterrain.config.ConfigManager;
 import com.grandterrain.worldgen.GrandterrainChunkGenerator;
+import com.grandterrain.worldgen.biome.GrandterrainBiomeSource;
 import com.grandterrain.worldgen.biome.GrandterrainBiomes;
 import com.grandterrain.worldgen.structure.GrandterrainStructurePieces;
 import com.grandterrain.worldgen.structure.GrandterrainStructures;
@@ -27,6 +28,12 @@ public class Grandterrain implements ModInitializer {
                 BuiltInRegistries.CHUNK_GENERATOR,
                 Identifier.fromNamespaceAndPath(MOD_ID, "grandterrain"),
                 GrandterrainChunkGenerator.CODEC
+        );
+
+        Registry.register(
+                BuiltInRegistries.BIOME_SOURCE,
+                Identifier.fromNamespaceAndPath(MOD_ID, "grandterrain"),
+                GrandterrainBiomeSource.CODEC
         );
 
         GrandterrainBiomes.init();

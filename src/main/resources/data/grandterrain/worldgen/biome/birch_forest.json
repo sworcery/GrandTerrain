@@ -75,11 +75,14 @@
     ],
     [
       "minecraft:trees_birch",
+      "minecraft:birch_tall",
       "minecraft:flower_default",
       "minecraft:flower_flower_forest",
       "minecraft:patch_grass_forest",
+      "minecraft:patch_tall_grass",
       "minecraft:brown_mushroom_normal",
-      "minecraft:red_mushroom_normal"
+      "minecraft:red_mushroom_normal",
+      "minecraft:patch_berry_bush"
     ],
     [
       "minecraft:freeze_top_layer"
