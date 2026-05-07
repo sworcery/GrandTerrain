@@ -4,11 +4,9 @@ import com.grandterrain.config.ConfigSnapshot;
 import com.grandterrain.worldgen.noise.ContinentalNoise;
 import com.grandterrain.worldgen.noise.FastNoiseLite;
 
-/**
- * Rare mega-caverns using Voronoi cellular noise (~500 block spacing,
- * 30-60 block radius chambers).
- */
 public class CavernGenerator implements CaveContributor {
+
+    private static final double CAVERN_THRESHOLD = 0.08;
 
     private final FastNoiseLite cellNoise;
     private final FastNoiseLite floorNoise;
@@ -16,6 +14,18 @@ public class CavernGenerator implements CaveContributor {
     private final int seaLevel;
     private final int bedrockFloor;
     private final int cavernCenterY;
+
+    private static final class ColumnCache {
+        long keyX = 1L;
+        long keyZ = 1L;
+        boolean valid;
+        double cellDist;
+        double proximity;
+        double cavernRadius;
+        double centerY;
+        double verticalRadius;
+    }
+    private final ThreadLocal<ColumnCache> columnCache = ThreadLocal.withInitial(ColumnCache::new);
 
     public CavernGenerator(long seed, ConfigSnapshot config) {
         this.enabled = config.enableMegaCaverns();
@@ -39,33 +49,49 @@ public class CavernGenerator implements CaveContributor {
     @Override public int minY() { return bedrockFloor; }
     @Override public int maxY() { return seaLevel - 40; }
 
-    @Override
-    public CarveResult sample(double x, double y, double z) {
-        if (!enabled) return CarveResult.SOLID;
+    private ColumnCache ensureColumn(double x, double z) {
+        long kx = Double.doubleToLongBits(x == 0.0 ? 0.0 : x);
+        long kz = Double.doubleToLongBits(z == 0.0 ? 0.0 : z);
+        ColumnCache c = columnCache.get();
+        if (c.valid && c.keyX == kx && c.keyZ == kz) return c;
 
         float fx = ContinentalNoise.wrapToFloat(x);
         float fz = ContinentalNoise.wrapToFloat(z);
 
-        double cellDist = cellNoise.GetNoise(fx, fz);
-        double cavernThreshold = 0.08;
+        c.cellDist = cellNoise.GetNoise(fx, fz);
+        if (c.cellDist <= CAVERN_THRESHOLD) {
+            c.proximity = 1.0 - (c.cellDist / CAVERN_THRESHOLD);
+            c.cavernRadius = 25.0 + c.proximity * 35.0;
+            c.centerY = cavernCenterY + floorNoise.GetNoise(fx * 0.5f, fz * 0.5f) * 40.0;
+            c.verticalRadius = c.cavernRadius * 0.6;
+        }
+        c.keyX = kx;
+        c.keyZ = kz;
+        c.valid = true;
+        return c;
+    }
 
-        if (cellDist > cavernThreshold) return CarveResult.SOLID;
+    @Override
+    public CarveResult sample(double x, double y, double z) {
+        if (!enabled) return CarveResult.SOLID;
 
-        double proximity = 1.0 - (cellDist / cavernThreshold);
-        double cavernRadius = 25.0 + proximity * 35.0;
-        double centerY = this.cavernCenterY + floorNoise.GetNoise(fx * 0.5f, fz * 0.5f) * 40.0;
-        double verticalDist = Math.abs(y - centerY);
-        double verticalRadius = cavernRadius * 0.6;
+        ColumnCache c = ensureColumn(x, z);
 
-        if (verticalDist > verticalRadius) return CarveResult.SOLID;
+        if (c.cellDist > CAVERN_THRESHOLD) return CarveResult.SOLID;
 
-        double verticalFade = 1.0 - (verticalDist / verticalRadius);
+        double verticalDist = Math.abs(y - c.centerY);
+        if (verticalDist > c.verticalRadius) return CarveResult.SOLID;
+
+        double verticalFade = 1.0 - (verticalDist / c.verticalRadius);
+
+        float fx = ContinentalNoise.wrapToFloat(x);
+        float fz = ContinentalNoise.wrapToFloat(z);
         double floorOffset = floorNoise.GetNoise(fx, (float) y, fz) * 8.0;
-        double floorY = centerY - verticalRadius + 5.0 + floorOffset;
+        double floorY = c.centerY - c.verticalRadius + 5.0 + floorOffset;
 
         if (y < floorY) return CarveResult.SOLID;
 
-        return (proximity * verticalFade - 0.2) > 0
+        return (c.proximity * verticalFade - 0.2) > 0
                 ? CarveResult.CARVE_AIR
                 : CarveResult.SOLID;
     }

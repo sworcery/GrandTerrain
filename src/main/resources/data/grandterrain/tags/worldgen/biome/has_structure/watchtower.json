@@ -1,0 +1,13 @@
+{
+  "replace": false,
+  "values": [
+    "grandterrain:lowland_plains",
+    "grandterrain:temperate_forest",
+    "grandterrain:alpine_meadow",
+    "grandterrain:mountain_pine_forest",
+    "grandterrain:rocky_highlands",
+    "grandterrain:savanna",
+    "grandterrain:tundra",
+    "grandterrain:birch_forest"
+  ]
+}
