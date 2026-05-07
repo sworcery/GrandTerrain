@@ -1,6 +1,6 @@
 {
   "type": "grandterrain:watchtower",
-  "biomes": "#minecraft:is_overworld",
+  "biomes": "#grandterrain:has_structure/watchtower",
   "spawn_overrides": {},
   "step": "surface_structures",
   "terrain_adaptation": "beard_thin"

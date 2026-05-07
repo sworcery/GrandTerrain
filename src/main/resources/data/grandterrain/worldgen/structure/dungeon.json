@@ -1,6 +1,6 @@
 {
   "type": "grandterrain:dungeon",
-  "biomes": "#minecraft:is_overworld",
+  "biomes": "#grandterrain:has_structure/dungeon",
   "spawn_overrides": {},
   "step": "underground_structures",
   "terrain_adaptation": "bury"
