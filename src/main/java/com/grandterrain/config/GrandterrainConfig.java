@@ -25,6 +25,11 @@ public class GrandterrainConfig {
     public int biomeBlendWidth = 4;
     public float climateBlendWidth = 0.05f;
 
+    // Biome altitude thresholds (offsets from sea level)
+    public int deepOceanOffset = -60;
+    public int coastalOffset = -20;
+    public int lowlandOffset = 10;
+
     // Caverns
     public int cavernCenterY = -100;
 
@@ -51,6 +56,13 @@ public class GrandterrainConfig {
         snowLineBase = clamp(snowLineBase, 100, 800);
         biomeBlendWidth = clamp(biomeBlendWidth, 0, 12);
         climateBlendWidth = clamp(climateBlendWidth, 0.0f, 0.2f);
+        deepOceanOffset = clamp(deepOceanOffset, -200, -10);
+        coastalOffset = clamp(coastalOffset, -100, 0);
+        lowlandOffset = clamp(lowlandOffset, 0, 100);
+        if (coastalOffset < deepOceanOffset + 5) coastalOffset = deepOceanOffset + 5;
+        if (lowlandOffset < coastalOffset + 5) lowlandOffset = coastalOffset + 5;
+        coastalOffset = clamp(coastalOffset, -200, 0);
+        lowlandOffset = clamp(lowlandOffset, 0, 200);
         cavernCenterY = clamp(cavernCenterY, -300, 0);
 
         if (seaLevel < worldMinY + 10) seaLevel = worldMinY + 10;
