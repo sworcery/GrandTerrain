@@ -76,6 +76,10 @@ public class ConfigManager {
         config.biomeBlendWidth = getInt(props, "snow.biomeBlendWidth", config.biomeBlendWidth);
         config.climateBlendWidth = getFloat(props, "snow.climateBlendWidth", config.climateBlendWidth);
 
+        config.deepOceanOffset = getInt(props, "biomes.deepOceanOffset", config.deepOceanOffset);
+        config.coastalOffset = getInt(props, "biomes.coastalOffset", config.coastalOffset);
+        config.lowlandOffset = getInt(props, "biomes.lowlandOffset", config.lowlandOffset);
+
         config.cavernCenterY = getInt(props, "caves.cavernCenterY", config.cavernCenterY);
 
         config.enableCastles = getBool(props, "structures.enableCastles", config.enableCastles);
@@ -103,6 +107,10 @@ public class ConfigManager {
         props.setProperty("snow.lineBase", String.valueOf(config.snowLineBase));
         props.setProperty("snow.biomeBlendWidth", String.valueOf(config.biomeBlendWidth));
         props.setProperty("snow.climateBlendWidth", String.valueOf(config.climateBlendWidth));
+
+        props.setProperty("biomes.deepOceanOffset", String.valueOf(config.deepOceanOffset));
+        props.setProperty("biomes.coastalOffset", String.valueOf(config.coastalOffset));
+        props.setProperty("biomes.lowlandOffset", String.valueOf(config.lowlandOffset));
 
         props.setProperty("caves.cavernCenterY", String.valueOf(config.cavernCenterY));
 

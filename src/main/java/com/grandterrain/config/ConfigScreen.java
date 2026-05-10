@@ -154,6 +154,33 @@ public class ConfigScreen {
                 .setSaveConsumer(v -> config.climateBlendWidth = v)
                 .build());
 
+        // Biome thresholds category
+        ConfigCategory biomes = builder.getOrCreateCategory(Component.literal("Biome Thresholds"));
+
+        biomes.addEntry(entries.startIntField(
+                        Component.literal("Deep Ocean Offset"), config.deepOceanOffset)
+                .setDefaultValue(defaults.deepOceanOffset)
+                .setMin(-200).setMax(-10)
+                .setTooltip(Component.literal("Y offset from sea level where deep ocean begins. More negative = deeper ocean floor."))
+                .setSaveConsumer(v -> config.deepOceanOffset = v)
+                .build());
+
+        biomes.addEntry(entries.startIntField(
+                        Component.literal("Coastal Offset"), config.coastalOffset)
+                .setDefaultValue(defaults.coastalOffset)
+                .setMin(-100).setMax(0)
+                .setTooltip(Component.literal("Y offset from sea level where coastal zone begins."))
+                .setSaveConsumer(v -> config.coastalOffset = v)
+                .build());
+
+        biomes.addEntry(entries.startIntField(
+                        Component.literal("Lowland Offset"), config.lowlandOffset)
+                .setDefaultValue(defaults.lowlandOffset)
+                .setMin(0).setMax(100)
+                .setTooltip(Component.literal("Y offset above sea level where lowland biomes begin."))
+                .setSaveConsumer(v -> config.lowlandOffset = v)
+                .build());
+
         // Structures category
         ConfigCategory structures = builder.getOrCreateCategory(Component.literal("Structures"));
 

@@ -4,6 +4,7 @@ import com.grandterrain.Grandterrain;
 import com.grandterrain.config.ConfigManager;
 import com.grandterrain.config.ConfigSnapshot;
 import com.grandterrain.worldgen.noise.ClimateNoise;
+import com.mojang.datafixers.util.Pair;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.core.Holder;
@@ -16,6 +17,8 @@ import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.biome.Climate;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.stream.Stream;
 
 public class GrandterrainBiomeSource extends BiomeSource {
@@ -29,20 +32,11 @@ public class GrandterrainBiomeSource extends BiomeSource {
     private final HolderGetter<Biome> biomeGetter;
     private final ConfigSnapshot config;
 
-    // Altitude thresholds (world-Y)
     private final int yDeepOcean;
     private final int yCoastalCliffs;
-    private final int yLowlandPlains;
-    private final int yTemperateForest;
-    private final int yAlpineMeadow;
-    private final int yMountainPine;
-    private final int yRockyHighlands;
-
-    // Cave boundaries
     private final int yLushCaveCeiling;
     private final int yDeepDarkCeiling;
 
-    // Original 10 biomes
     private final Holder<Biome> deepOcean;
     private final Holder<Biome> coastalCliffs;
     private final Holder<Biome> lowlandPlains;
@@ -53,18 +47,23 @@ public class GrandterrainBiomeSource extends BiomeSource {
     private final Holder<Biome> snowPeaks;
     private final Holder<Biome> deepValley;
     private final Holder<Biome> volcanicRegion;
-
-    // 6 new climate biomes
     private final Holder<Biome> desert;
     private final Holder<Biome> savanna;
     private final Holder<Biome> swamp;
     private final Holder<Biome> tundra;
     private final Holder<Biome> birchForest;
     private final Holder<Biome> darkForest;
-
-    // Cave biomes (vanilla)
     private final Holder<Biome> lushCaves;
     private final Holder<Biome> deepDark;
+
+    private final int blendY;
+    private final double blendClimate;
+
+    private static final Climate.Parameter PARAM_FULL = Climate.Parameter.span(-1.5f, 1.5f);
+
+    private final Climate.ParameterList<Holder<Biome>> biomeParameters;
+    private final float altParamScale;
+    private final float altParamOffset;
 
     private volatile ClimateNoise climateNoise;
 
@@ -80,20 +79,16 @@ public class GrandterrainBiomeSource extends BiomeSource {
         int snowLine = config.snowLineBase();
         int surfaceToSnowRange = snowLine - seaLevel;
 
-        int t0 = seaLevel - 60;
-        int t1 = Math.max(t0 + 5, seaLevel - 20);
-        int t2 = Math.max(t1 + 5, seaLevel + 10);
+        int t0 = seaLevel + config.deepOceanOffset();
+        int t1 = Math.max(t0 + 5, seaLevel + config.coastalOffset());
+        int t2 = Math.max(t1 + 5, seaLevel + config.lowlandOffset());
         int t3 = Math.max(t2 + 5, seaLevel + Math.max(20, surfaceToSnowRange / 4));
         int t4 = Math.max(t3 + 5, seaLevel + Math.max(60, surfaceToSnowRange / 2));
         int t5 = Math.max(t4 + 5, seaLevel + Math.max(100, (surfaceToSnowRange * 3) / 4));
         int t6 = Math.max(t5 + 5, snowLine - 20);
+
         this.yDeepOcean = t0;
         this.yCoastalCliffs = t1;
-        this.yLowlandPlains = t2;
-        this.yTemperateForest = t3;
-        this.yAlpineMeadow = t4;
-        this.yMountainPine = t5;
-        this.yRockyHighlands = t6;
 
         int worldMinY = config.worldMinY();
         this.yLushCaveCeiling = Math.max(worldMinY + 100, seaLevel - 80);
@@ -109,19 +104,35 @@ public class GrandterrainBiomeSource extends BiomeSource {
         this.snowPeaks = getOrFallback(biomeGetter, GrandterrainBiomes.SNOW_PEAKS, Biomes.FROZEN_PEAKS);
         this.deepValley = getOrFallback(biomeGetter, GrandterrainBiomes.DEEP_VALLEY, Biomes.FOREST);
         this.volcanicRegion = getOrFallback(biomeGetter, GrandterrainBiomes.VOLCANIC_REGION, Biomes.BADLANDS);
-
         this.desert = getOrFallback(biomeGetter, GrandterrainBiomes.DESERT, Biomes.DESERT);
         this.savanna = getOrFallback(biomeGetter, GrandterrainBiomes.SAVANNA, Biomes.SAVANNA);
         this.swamp = getOrFallback(biomeGetter, GrandterrainBiomes.SWAMP, Biomes.SWAMP);
         this.tundra = getOrFallback(biomeGetter, GrandterrainBiomes.TUNDRA, Biomes.SNOWY_TAIGA);
         this.birchForest = getOrFallback(biomeGetter, GrandterrainBiomes.BIRCH_FOREST, Biomes.BIRCH_FOREST);
         this.darkForest = getOrFallback(biomeGetter, GrandterrainBiomes.DARK_FOREST, Biomes.DARK_FOREST);
-
         this.lushCaves = biomeGetter.getOrThrow(Biomes.LUSH_CAVES);
         this.deepDark = biomeGetter.getOrThrow(Biomes.DEEP_DARK);
 
         this.blendY = config.biomeBlendWidth();
         this.blendClimate = config.climateBlendWidth();
+
+        float range = t6 - t0;
+        if (range > 0) {
+            float scale = 2.0f / range;
+            this.altParamScale = scale;
+            this.altParamOffset = -1.0f - (t0 * scale);
+        } else {
+            Grandterrain.LOGGER.warn("Biome altitude range is zero or negative (t0={}, t6={}); all surface biomes will collapse", t0, t6);
+            this.altParamScale = 0.0f;
+            this.altParamOffset = 0.0f;
+        }
+
+        float cTemperate = blockYToParam(t3);
+        float cAlpine = blockYToParam(t4);
+        float cMountain = blockYToParam(t5);
+        float cRocky = blockYToParam(t6);
+
+        this.biomeParameters = buildBiomeParameters(cTemperate, cAlpine, cMountain, cRocky);
     }
 
     public void initClimate(long seed) {
@@ -130,6 +141,67 @@ public class GrandterrainBiomeSource extends BiomeSource {
 
     public HolderGetter<Biome> getBiomeGetter() {
         return biomeGetter;
+    }
+
+    private float blockYToParam(int blockY) {
+        return blockY * altParamScale + altParamOffset;
+    }
+
+    private Climate.ParameterList<Holder<Biome>> buildBiomeParameters(
+            float cTemperate, float cAlpine, float cMountain, float cRocky) {
+
+        Climate.Parameter T_FROZEN = Climate.Parameter.span(-1.5f, -0.3f);
+        Climate.Parameter T_COOL = Climate.Parameter.span(-0.3f, 0.15f);
+        Climate.Parameter T_WARM = Climate.Parameter.span(0.15f, 0.5f);
+        Climate.Parameter T_HOT = Climate.Parameter.span(0.5f, 1.5f);
+        Climate.Parameter T_NOT_FROZEN = Climate.Parameter.span(-0.3f, 1.5f);
+
+        Climate.Parameter C_LOW = Climate.Parameter.span(-1.5f, cTemperate);
+        Climate.Parameter C_TEMPERATE = Climate.Parameter.span(cTemperate, cAlpine);
+        Climate.Parameter C_ALPINE = Climate.Parameter.span(cAlpine, cMountain);
+        Climate.Parameter C_MOUNTAIN = Climate.Parameter.span(cMountain, cRocky);
+        Climate.Parameter C_PEAK = Climate.Parameter.span(cRocky, 1.5f);
+        Climate.Parameter C_SURFACE = Climate.Parameter.span(-1.5f, cRocky);
+
+        List<Pair<Climate.ParameterPoint, Holder<Biome>>> entries = new ArrayList<>();
+
+        entries.add(entry(C_PEAK, PARAM_FULL, PARAM_FULL, snowPeaks));
+
+        entries.add(entry(C_SURFACE, T_FROZEN, PARAM_FULL, tundra));
+
+        entries.add(entry(C_MOUNTAIN, T_NOT_FROZEN, PARAM_FULL, rockyHighlands));
+
+        entries.add(entry(C_ALPINE, T_NOT_FROZEN, PARAM_FULL, mountainPineForest));
+
+        entries.add(entry(C_TEMPERATE, T_NOT_FROZEN,
+                Climate.Parameter.span(-1.5f, 0.3f), alpineMeadow));
+        entries.add(entry(C_TEMPERATE, T_NOT_FROZEN,
+                Climate.Parameter.span(0.3f, 1.5f), deepValley));
+
+        entries.add(entry(C_LOW, T_HOT, Climate.Parameter.span(-1.5f, -0.4f), volcanicRegion));
+        entries.add(entry(C_LOW, T_HOT, Climate.Parameter.span(-0.4f, -0.2f), desert));
+        entries.add(entry(C_LOW, T_HOT, Climate.Parameter.span(-0.2f, 0.4f), savanna));
+        entries.add(entry(C_LOW, T_HOT, Climate.Parameter.span(0.4f, 1.5f), swamp));
+
+        entries.add(entry(C_LOW, T_WARM, Climate.Parameter.span(0.4f, 1.5f), darkForest));
+        entries.add(entry(C_LOW, T_WARM, Climate.Parameter.span(0.0f, 0.4f), temperateForest));
+        entries.add(entry(C_LOW, T_WARM, Climate.Parameter.span(-1.5f, 0.0f), lowlandPlains));
+
+        entries.add(entry(C_LOW, T_COOL, Climate.Parameter.span(0.2f, 1.5f), birchForest));
+        entries.add(entry(C_LOW, T_COOL, Climate.Parameter.span(-1.5f, 0.2f), lowlandPlains));
+
+        return new Climate.ParameterList<>(entries);
+    }
+
+    private static Pair<Climate.ParameterPoint, Holder<Biome>> entry(
+            Climate.Parameter continentalness,
+            Climate.Parameter temperature,
+            Climate.Parameter humidity,
+            Holder<Biome> biome) {
+        return Pair.of(
+                Climate.parameters(temperature, humidity, continentalness,
+                        PARAM_FULL, PARAM_FULL, PARAM_FULL, 0L),
+                biome);
     }
 
     private static Holder<Biome> getOrFallback(HolderGetter<Biome> getter,
@@ -158,9 +230,6 @@ public class GrandterrainBiomeSource extends BiomeSource {
         );
     }
 
-    private final int blendY;
-    private final double blendClimate;
-
     @Override
     public Holder<Biome> getNoiseBiome(int x, int y, int z, Climate.Sampler sampler) {
         int blockY = y * 4;
@@ -169,41 +238,30 @@ public class GrandterrainBiomeSource extends BiomeSource {
 
         if (blockY < yDeepDarkCeiling) return deepDark;
         if (blockY < yLushCaveCeiling) return lushCaves;
-
         if (blockY < yDeepOcean) return deepOcean;
         if (blockY < yCoastalCliffs) return coastalCliffs;
 
         int jy = blockY + altitudeJitter(blockX, blockZ);
+        float altParam = blockYToParam(jy);
 
-        if (jy >= yRockyHighlands) return snowPeaks;
+        float temp = 0.25f;
+        float humid = 0.15f;
 
         ClimateNoise cn = climateNoise;
-        if (cn == null) {
-            return selectByAltitudeOnly(jy);
+        if (cn != null) {
+            temp = (float) (cn.temperature(blockX, blockZ)
+                    + climateJitter(blockX, blockZ, 0));
+            humid = (float) (cn.humidity(blockX, blockZ)
+                    + climateJitter(blockX, blockZ, 1));
         }
 
-        double temp = cn.temperature(blockX, blockZ)
-                + climateJitter(blockX, blockZ, 0);
-        double humid = cn.humidity(blockX, blockZ)
-                + climateJitter(blockX, blockZ, 1);
+        Climate.TargetPoint target = Climate.target(
+                Climate.quantizeCoord(temp),
+                Climate.quantizeCoord(humid),
+                Climate.quantizeCoord(altParam),
+                0L, 0L, 0L);
 
-        if (jy >= yMountainPine) {
-            if (temp < -0.3) return tundra;
-            return rockyHighlands;
-        }
-
-        if (jy >= yAlpineMeadow) {
-            if (temp < -0.3) return tundra;
-            return mountainPineForest;
-        }
-
-        if (jy >= yTemperateForest) {
-            if (temp < -0.3) return tundra;
-            if (humid > 0.3) return deepValley;
-            return alpineMeadow;
-        }
-
-        return selectLowMidBiome(temp, humid);
+        return biomeParameters.findValue(target);
     }
 
     private int altitudeJitter(int blockX, int blockZ) {
@@ -220,35 +278,5 @@ public class GrandterrainBiomeSource extends BiomeSource {
         int bz = blockZ >> 2;
         int hash = ((bx * 19349669 + axis * 73856093) ^ (bz * 83492791)) & 0xFF;
         return ((double) hash / 256.0 - 0.5) * 2.0 * blendClimate;
-    }
-
-    private Holder<Biome> selectLowMidBiome(double temp, double humid) {
-        if (temp > 0.5) {
-            if (humid < -0.4) return volcanicRegion;
-            if (humid < -0.2) return desert;
-            if (humid > 0.4) return swamp;
-            return savanna;
-        }
-
-        if (temp < -0.3) {
-            return tundra;
-        }
-
-        if (temp > 0.15) {
-            if (humid > 0.4) return darkForest;
-            if (humid > 0.0) return temperateForest;
-            return lowlandPlains;
-        }
-
-        if (humid > 0.2) return birchForest;
-        return lowlandPlains;
-    }
-
-    private Holder<Biome> selectByAltitudeOnly(int blockY) {
-        if (blockY < yLowlandPlains) return lowlandPlains;
-        if (blockY < yTemperateForest) return temperateForest;
-        if (blockY < yAlpineMeadow) return alpineMeadow;
-        if (blockY < yMountainPine) return mountainPineForest;
-        return rockyHighlands;
     }
 }
