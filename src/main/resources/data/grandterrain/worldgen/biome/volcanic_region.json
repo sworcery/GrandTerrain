@@ -77,7 +77,9 @@
       "minecraft:ore_lapis",
       "minecraft:ore_lapis_buried",
       "minecraft:ore_copper",
-      "minecraft:ore_copper_large"
+      "minecraft:ore_copper_large",
+      "grandterrain:extra_volcanic_gold",
+      "grandterrain:volcanic_magma_deposit"
     ],
     [
       "minecraft:glow_lichen"

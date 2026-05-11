@@ -91,7 +91,8 @@
       "minecraft:patch_grass_plain",
       "minecraft:patch_tall_grass",
       "minecraft:forest_rock",
-      "minecraft:patch_berry_bush"
+      "minecraft:patch_berry_bush",
+      "grandterrain:highland_boulders"
     ],
     [
       "minecraft:freeze_top_layer"
