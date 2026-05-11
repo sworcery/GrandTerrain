@@ -94,7 +94,8 @@
       "minecraft:patch_berry_bush",
       "minecraft:brown_mushroom_taiga",
       "minecraft:red_mushroom_taiga",
-      "minecraft:patch_dead_bush"
+      "minecraft:patch_dead_bush",
+      "grandterrain:highland_boulders"
     ],
     [
       "minecraft:freeze_top_layer"
