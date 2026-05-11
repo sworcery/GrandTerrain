@@ -15,5 +15,9 @@
   "biome.grandterrain.swamp": "Swamp",
   "biome.grandterrain.tundra": "Tundra",
   "biome.grandterrain.birch_forest": "Birch Forest",
-  "biome.grandterrain.dark_forest": "Dark Forest"
+  "biome.grandterrain.dark_forest": "Dark Forest",
+  "structure.grandterrain.castle": "Castle",
+  "structure.grandterrain.ruin": "Ruin",
+  "structure.grandterrain.dungeon": "Dungeon",
+  "structure.grandterrain.watchtower": "Watchtower"
 }
