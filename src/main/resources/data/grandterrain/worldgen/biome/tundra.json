@@ -7,7 +7,20 @@
     "fog_color": 11184810,
     "water_color": 4020182,
     "water_fog_color": 329011,
-    "grass_color": 8434835
+    "grass_color": 8434835,
+    "foliage_color": 8434835,
+    "mood_sound": {
+      "sound": "minecraft:ambient.cave",
+      "tick_delay": 6000,
+      "block_search_extent": 8,
+      "offset": 2.0
+    },
+    "music": {
+      "sound": "minecraft:music.overworld.snowy_slopes",
+      "min_delay": 12000,
+      "max_delay": 24000,
+      "replace_current_music": false
+    }
   },
   "spawners": {
     "monster": [
