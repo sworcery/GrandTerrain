@@ -1,6 +1,6 @@
 # Gradle
-.gradle/
-build/
+**/.gradle/
+**/build/
 !gradle/wrapper/gradle-wrapper.jar
 
 # IDE
@@ -34,3 +34,13 @@ logs/
 
 # Runtime
 config/grandterrain.properties
+
+# Node
+**/node_modules/
+**/.next/
+**/.env.local
+**/.env*.local
+
+# Worker
+worker/data/
+worker/worlds/

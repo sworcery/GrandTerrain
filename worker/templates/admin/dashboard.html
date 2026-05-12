@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GrandTerrain Admin</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: system-ui, sans-serif; background: #09090b; color: #e4e4e7; padding: 2rem; }
+        h1 { font-size: 1.5rem; margin-bottom: 1.5rem; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+        .stat { background: #18181b; border: 1px solid #27272a; border-radius: 0.75rem; padding: 1.25rem; }
+        .stat-value { font-size: 2rem; font-weight: 700; }
+        .stat-label { font-size: 0.875rem; color: #71717a; margin-top: 0.25rem; }
+        nav { display: flex; gap: 1rem; margin-bottom: 2rem; }
+        a { color: #34d399; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .recent { background: #18181b; border: 1px solid #27272a; border-radius: 0.75rem; overflow: hidden; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 0.75rem 1rem; text-align: left; }
+        th { background: #27272a; font-size: 0.75rem; text-transform: uppercase; color: #a1a1aa; }
+        tr:not(:last-child) td { border-bottom: 1px solid #27272a; }
+        .badge { display: inline-block; padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 500; }
+        .badge-pending { background: #422006; color: #fbbf24; }
+        .badge-generating { background: #172554; color: #60a5fa; }
+        .badge-review { background: #3b0764; color: #c084fc; }
+        .badge-ready { background: #052e16; color: #34d399; }
+        .badge-delivered { background: #1c1917; color: #a8a29e; }
+    </style>
+</head>
+<body>
+    <h1>GrandTerrain Admin</h1>
+    <nav>
+        <a href="/admin">Dashboard</a>
+        <a href="/admin/orders">All Orders</a>
+        <a href="/admin/generate">Custom Generate</a>
+    </nav>
+
+    <div class="stats">
+        <div class="stat">
+            <div class="stat-value">{{ counts.pending }}</div>
+            <div class="stat-label">Pending</div>
+        </div>
+        <div class="stat">
+            <div class="stat-value">{{ counts.generating }}</div>
+            <div class="stat-label">Generating</div>
+        </div>
+        <div class="stat">
+            <div class="stat-value">{{ counts.review }}</div>
+            <div class="stat-label">Needs Review</div>
+        </div>
+        <div class="stat">
+            <div class="stat-value">{{ counts.ready }}</div>
+            <div class="stat-label">Ready</div>
+        </div>
+        <div class="stat">
+            <div class="stat-value">{{ counts.delivered }}</div>
+            <div class="stat-label">Delivered</div>
+        </div>
+    </div>
+
+    <div class="recent">
+        <table>
+            <thead>
+                <tr>
+                    <th>Order ID</th>
+                    <th>Email</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for order in orders[:10] %}
+                <tr>
+                    <td><code>{{ order.order_id }}</code></td>
+                    <td>{{ order.email }}</td>
+                    <td><span class="badge badge-{{ order.status }}">{{ order.status }}</span></td>
+                    <td>{{ order.created_at[:10] }}</td>
+                </tr>
+                {% endfor %}
+                {% if not orders %}
+                <tr><td colspan="4" style="text-align:center;color:#71717a;">No orders yet.</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>

@@ -1,0 +1,11 @@
+services:
+  worker:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - MOD_JAR_PATH=/app/data/grandterrain.jar
