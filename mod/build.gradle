@@ -50,7 +50,7 @@ java {
 }
 
 jar {
-    from("LICENSE") {
+    from("${rootProject.projectDir}/LICENSE") {
         rename { "${it}_${project.base.archivesName.get()}" }
     }
 }
