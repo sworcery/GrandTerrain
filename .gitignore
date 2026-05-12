@@ -29,6 +29,8 @@ logs/
 # Compiled
 *.class
 *.jar
+*.pyc
+**/__pycache__/
 !gradle/wrapper/gradle-wrapper.jar
 
 # Runtime
