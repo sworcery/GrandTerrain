@@ -20,6 +20,7 @@
 Thumbs.db
 
 # Local tooling
+scratchpad.md
 
 # Fabric
 run/
@@ -39,6 +40,7 @@ config/grandterrain.properties
 # Node
 **/node_modules/
 **/.next/
+**/*.tsbuildinfo
 **/.env.local
 **/.env*.local
 

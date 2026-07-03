@@ -1,77 +1,200 @@
 import asyncio
 import json
+import logging
 import os
 import shutil
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .models import WorldConfig
 
+logger = logging.getLogger("grandterrain.generator")
+
 DATA_DIR = Path(os.getenv("DATA_DIR", "/app/data"))
-ORDERS_DIR = DATA_DIR / "orders"
+JOBS_DIR = DATA_DIR / "jobs"
 WORLDS_DIR = DATA_DIR / "worlds"
+SERVER_DIR = DATA_DIR / "server"
 MOD_JAR = Path(os.getenv("MOD_JAR_PATH", "/app/data/grandterrain.jar"))
+FABRIC_API_JAR = Path(os.getenv("FABRIC_API_JAR_PATH", "/app/data/fabric-api.jar"))
+SERVER_JAR = Path(os.getenv("SERVER_JAR_PATH", "/app/data/fabric-server-launch.jar"))
+
+STARTUP_TIMEOUT = int(os.getenv("SERVER_STARTUP_TIMEOUT", "180"))
+GENERATION_SETTLE = int(os.getenv("GENERATION_SETTLE_TIME", "30"))
+
+SERVER_PROPERTIES = """\
+server-port=0
+online-mode=false
+enable-command-block=false
+spawn-protection=0
+max-tick-time=-1
+level-name=world
+level-type=grandterrain:grandterrain
+motd=GrandTerrain World Generator
+max-players=0
+"""
 
 
 def ensure_dirs() -> None:
-    ORDERS_DIR.mkdir(parents=True, exist_ok=True)
+    JOBS_DIR.mkdir(parents=True, exist_ok=True)
     WORLDS_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def write_config_properties(order_id: str, config: WorldConfig) -> Path:
-    order_dir = ORDERS_DIR / order_id
-    order_dir.mkdir(exist_ok=True)
-    props_path = order_dir / "grandterrain.properties"
+def write_config_properties(job_id: str, config: WorldConfig) -> Path:
+    job_dir = JOBS_DIR / job_id
+    job_dir.mkdir(exist_ok=True)
+    props_path = job_dir / "grandterrain.properties"
     props_path.write_text(config.to_properties())
     return props_path
 
 
-async def generate_world(order_id: str, config: WorldConfig) -> Path:
-    """
-    Generate a Minecraft world using a headless Fabric server with the
-    GrandTerrain mod. The config is written as a properties file that
-    the mod reads on startup.
+def _update_meta(job_id: str, updates: dict) -> None:
+    meta_path = JOBS_DIR / job_id / "meta.json"
+    if meta_path.exists():
+        meta = json.loads(meta_path.read_text())
+    else:
+        meta = {}
+    meta.update(updates)
+    meta_path.write_text(json.dumps(meta, indent=2))
 
-    Steps:
-    1. Write grandterrain.properties for this order's config
-    2. Set up a temporary server directory with the mod jar
-    3. Launch headless Fabric server to generate chunks
-    4. Use Chunky to pre-render (optional, future)
-    5. Package the world save as a zip
 
-    This is a stub — the actual server invocation will be wired up
-    once the mod has been tested in-game.
-    """
+def _setup_server_instance(job_id: str, config: WorldConfig) -> Path:
+    instance_dir = JOBS_DIR / job_id / "server"
+    if instance_dir.exists():
+        shutil.rmtree(instance_dir)
+    instance_dir.mkdir(parents=True)
+
+    mods_dir = instance_dir / "mods"
+    mods_dir.mkdir()
+    shutil.copy(MOD_JAR, mods_dir / MOD_JAR.name)
+    if FABRIC_API_JAR.exists():
+        shutil.copy(FABRIC_API_JAR, mods_dir / FABRIC_API_JAR.name)
+
+    config_dir = instance_dir / "config"
+    config_dir.mkdir()
+    (config_dir / "grandterrain.properties").write_text(config.to_properties())
+
+    (instance_dir / "server.properties").write_text(SERVER_PROPERTIES)
+    (instance_dir / "eula.txt").write_text("eula=true\n")
+
+    if SERVER_JAR.exists():
+        shutil.copy(SERVER_JAR, instance_dir / "fabric-server-launch.jar")
+
+    return instance_dir
+
+
+def _package_world(job_id: str, instance_dir: Path) -> Path:
+    world_dir = instance_dir / "world"
+    zip_path = WORLDS_DIR / f"{job_id}.zip"
+
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        if world_dir.exists():
+            for file_path in world_dir.rglob("*"):
+                if file_path.is_file():
+                    arcname = f"world/{file_path.relative_to(world_dir)}"
+                    zf.write(file_path, arcname)
+        else:
+            zf.writestr("world/README.txt", "World generation requires a Fabric server.\n")
+
+    return zip_path
+
+
+async def generate_world(job_id: str, config: WorldConfig) -> Path | None:
     ensure_dirs()
-    order_dir = ORDERS_DIR / order_id
-    order_dir.mkdir(exist_ok=True)
-
-    write_config_properties(order_id, config)
-
-    meta = {
-        "order_id": order_id,
+    _update_meta(job_id, {
         "status": "generating",
         "started_at": datetime.now(timezone.utc).isoformat(),
-        "config": config.model_dump(),
-    }
-    (order_dir / "meta.json").write_text(json.dumps(meta, indent=2))
+    })
 
-    # TODO: actual server launch
-    # server_dir = order_dir / "server"
-    # server_dir.mkdir(exist_ok=True)
-    # shutil.copy(MOD_JAR, server_dir / "mods" / "grandterrain.jar")
-    # proc = await asyncio.create_subprocess_exec(
-    #     "java", "-jar", "fabric-server.jar", "--nogui",
-    #     cwd=str(server_dir),
-    # )
-    # await proc.wait()
+    instance_dir = _setup_server_instance(job_id, config)
+    server_jar = instance_dir / "fabric-server-launch.jar"
+    success = False
 
-    world_dir = WORLDS_DIR / order_id
-    world_dir.mkdir(exist_ok=True)
-    (world_dir / ".placeholder").write_text("World files will be generated here.\n")
+    if server_jar.exists():
+        logger.info("Starting Fabric server for job %s", job_id)
+        proc = await asyncio.create_subprocess_exec(
+            "java", "-Xmx2G", "-jar", "fabric-server-launch.jar", "--nogui",
+            cwd=str(instance_dir),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            stdin=asyncio.subprocess.PIPE,
+        )
 
-    meta["status"] = "review"
-    meta["completed_at"] = datetime.now(timezone.utc).isoformat()
-    (order_dir / "meta.json").write_text(json.dumps(meta, indent=2))
+        log_path = JOBS_DIR / job_id / "server.log"
+        server_ready = False
 
-    return world_dir
+        try:
+            with open(log_path, "w") as log_file:
+                async def read_output():
+                    nonlocal server_ready
+                    while True:
+                        line = await asyncio.wait_for(
+                            proc.stdout.readline(), timeout=STARTUP_TIMEOUT
+                        )
+                        if not line:
+                            break
+                        decoded = line.decode("utf-8", errors="replace").rstrip()
+                        log_file.write(decoded + "\n")
+                        log_file.flush()
+                        logger.debug("[mc] %s", decoded)
+                        if "Done (" in decoded and ")!" in decoded:
+                            server_ready = True
+                            return
+
+                await read_output()
+
+                if server_ready:
+                    success = True
+                    logger.info("Server ready for job %s, letting chunks settle", job_id)
+                    await asyncio.sleep(GENERATION_SETTLE)
+
+                    logger.info("Stopping server for job %s", job_id)
+                    proc.stdin.write(b"stop\n")
+                    await proc.stdin.drain()
+
+                    try:
+                        await asyncio.wait_for(proc.wait(), timeout=60)
+                    except asyncio.TimeoutError:
+                        logger.warning("Server didn't stop cleanly, terminating")
+                        proc.terminate()
+                        await proc.wait()
+                else:
+                    logger.error("Server never became ready for job %s", job_id)
+                    proc.terminate()
+                    await proc.wait()
+
+        except asyncio.TimeoutError:
+            logger.error("Server startup timed out for job %s", job_id)
+            proc.terminate()
+            await proc.wait()
+        except Exception:
+            logger.exception("Error during world generation for job %s", job_id)
+            proc.terminate()
+            await proc.wait()
+    else:
+        logger.warning(
+            "No server jar found at %s — generating placeholder for job %s",
+            server_jar, job_id,
+        )
+
+    if not success:
+        shutil.rmtree(instance_dir, ignore_errors=True)
+        _update_meta(job_id, {
+            "status": "failed",
+            "failed_at": datetime.now(timezone.utc).isoformat(),
+        })
+        logger.error("Generation failed for job %s", job_id)
+        return None
+
+    zip_path = _package_world(job_id, instance_dir)
+
+    shutil.rmtree(instance_dir, ignore_errors=True)
+
+    _update_meta(job_id, {
+        "status": "ready",
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+        "world_zip": str(zip_path),
+    })
+
+    logger.info("Generation complete for job %s — zip at %s", job_id, zip_path)
+    return zip_path

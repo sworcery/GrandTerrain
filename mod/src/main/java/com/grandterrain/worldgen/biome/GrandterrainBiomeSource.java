@@ -53,8 +53,6 @@ public class GrandterrainBiomeSource extends BiomeSource {
     private final Holder<Biome> tundra;
     private final Holder<Biome> birchForest;
     private final Holder<Biome> darkForest;
-    private final Holder<Biome> lushCaves;
-    private final Holder<Biome> deepDark;
 
     private final int blendY;
     private final double blendClimate;
@@ -110,8 +108,6 @@ public class GrandterrainBiomeSource extends BiomeSource {
         this.tundra = getOrFallback(biomeGetter, GrandterrainBiomes.TUNDRA, Biomes.SNOWY_TAIGA);
         this.birchForest = getOrFallback(biomeGetter, GrandterrainBiomes.BIRCH_FOREST, Biomes.BIRCH_FOREST);
         this.darkForest = getOrFallback(biomeGetter, GrandterrainBiomes.DARK_FOREST, Biomes.DARK_FOREST);
-        this.lushCaves = biomeGetter.getOrThrow(Biomes.LUSH_CAVES);
-        this.deepDark = biomeGetter.getOrThrow(Biomes.DEEP_DARK);
 
         this.blendY = config.biomeBlendWidth();
         this.blendClimate = config.climateBlendWidth();
@@ -225,8 +221,7 @@ public class GrandterrainBiomeSource extends BiomeSource {
                 deepOcean, coastalCliffs, lowlandPlains, temperateForest,
                 alpineMeadow, mountainPineForest, rockyHighlands, snowPeaks,
                 deepValley, volcanicRegion,
-                desert, savanna, swamp, tundra, birchForest, darkForest,
-                lushCaves, deepDark
+                desert, savanna, swamp, tundra, birchForest, darkForest
         );
     }
 
@@ -236,8 +231,6 @@ public class GrandterrainBiomeSource extends BiomeSource {
         int blockX = x * 4;
         int blockZ = z * 4;
 
-        if (blockY < yDeepDarkCeiling) return deepDark;
-        if (blockY < yLushCaveCeiling) return lushCaves;
         if (blockY < yDeepOcean) return deepOcean;
         if (blockY < yCoastalCliffs) return coastalCliffs;
 

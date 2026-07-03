@@ -3,34 +3,28 @@ import type { WorldConfig } from "./config-schema";
 const WORKER_URL =
   process.env.NEXT_PUBLIC_WORKER_URL ?? "http://localhost:8080";
 
-export interface OrderRequest {
-  email: string;
-  config: WorldConfig;
-  notes?: string;
-}
-
-export interface OrderResponse {
-  orderId: string;
-  status: "pending" | "generating" | "review" | "ready" | "delivered";
+export interface JobResponse {
+  jobId: string;
+  status: "pending" | "generating" | "ready" | "failed";
   createdAt: string;
 }
 
-export async function submitOrder(
-  order: OrderRequest,
-): Promise<OrderResponse> {
-  const res = await fetch(`${WORKER_URL}/api/orders`, {
+export async function generateWorld(config: WorldConfig): Promise<JobResponse> {
+  const res = await fetch(`${WORKER_URL}/api/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(order),
+    body: JSON.stringify({ config }),
   });
-  if (!res.ok) throw new Error(`Order submission failed: ${res.status}`);
+  if (!res.ok) throw new Error(`Generation request failed: ${res.status}`);
   return res.json();
 }
 
-export async function getOrderStatus(
-  orderId: string,
-): Promise<OrderResponse> {
-  const res = await fetch(`${WORKER_URL}/api/orders/${orderId}`);
-  if (!res.ok) throw new Error(`Order lookup failed: ${res.status}`);
+export async function getJobStatus(jobId: string): Promise<JobResponse> {
+  const res = await fetch(`${WORKER_URL}/api/jobs/${jobId}`);
+  if (!res.ok) throw new Error(`Job lookup failed: ${res.status}`);
   return res.json();
+}
+
+export function downloadUrl(jobId: string): string {
+  return `${WORKER_URL}/api/jobs/${jobId}/download`;
 }

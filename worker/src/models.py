@@ -64,6 +64,7 @@ class WorldConfig(_CamelModel):
             f"terrain.continentalScale={self.terrain.continental_scale}",
             f"terrain.erosionStrength={self.terrain.erosion_strength}",
             f"terrain.seaLevel={self.terrain.sea_level}",
+            f"terrain.worldMinY=-256",
             f"terrain.worldHeight={self.terrain.world_height}",
             f"caves.density={self.caves.cave_density}",
             f"caves.frequency={self.caves.cave_frequency}",
@@ -86,13 +87,11 @@ class WorldConfig(_CamelModel):
         return "\n".join(lines) + "\n"
 
 
-class OrderRequest(_CamelModel):
-    email: str
+class GenerateRequest(_CamelModel):
     config: WorldConfig
-    notes: str | None = None
 
 
-class OrderResponse(_CamelModel):
-    order_id: str
+class JobResponse(_CamelModel):
+    job_id: str
     status: str
     created_at: str
