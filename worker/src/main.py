@@ -1,16 +1,26 @@
+import logging
 import os
+import re
 from contextlib import asynccontextmanager
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
+from fastapi.responses import FileResponse
 
-from .generator import generate_world
-from .models import OrderRequest, OrderResponse, WorldConfig
-from .orders import create_order, get_order, list_orders, update_order_status
+from .generator import WORLDS_DIR, generate_world
+from .jobs import create_job, get_job
+from .models import GenerateRequest, JobResponse
 
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "changeme")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(name)s %(levelname)s %(message)s",
+)
+
+ALLOWED_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
+MAX_CONCURRENT_JOBS = int(os.getenv("MAX_CONCURRENT_JOBS", "1"))
+
+_JOB_ID_RE = re.compile(r"^[0-9a-f]{12}$")
+_active_jobs = 0
 
 
 @asynccontextmanager
@@ -19,86 +29,59 @@ async def lifespan(app: FastAPI):
     ensure_dirs()
     yield
 
+
 app = FastAPI(title="GrandTerrain Worker", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-templates = Jinja2Templates(directory="templates")
+
+async def _run_job(job_id: str, config) -> None:
+    global _active_jobs
+    try:
+        await generate_world(job_id, config)
+    finally:
+        _active_jobs -= 1
 
 
-# --- Customer API ---
-
-@app.post("/api/orders", response_model=OrderResponse)
-async def submit_order(req: OrderRequest, bg: BackgroundTasks):
-    order = create_order(req)
-    bg.add_task(generate_world, order.order_id, req.config)
-    return order
+def _valid_job_id(job_id: str) -> bool:
+    return bool(_JOB_ID_RE.match(job_id))
 
 
-@app.get("/api/orders/{order_id}", response_model=OrderResponse)
-async def order_status(order_id: str):
-    order = get_order(order_id)
-    if not order:
-        raise HTTPException(404, "Order not found")
-    return order
+@app.post("/api/generate", response_model=JobResponse)
+async def generate(req: GenerateRequest, bg: BackgroundTasks):
+    global _active_jobs
+    if _active_jobs >= MAX_CONCURRENT_JOBS:
+        raise HTTPException(429, "Server is busy generating another world. Try again shortly.")
+    _active_jobs += 1
+    job = create_job(req)
+    bg.add_task(_run_job, job.job_id, req.config)
+    return job
 
 
-# --- Admin API ---
-
-def verify_admin(request: Request):
-    auth = request.headers.get("Authorization", "")
-    if auth != f"Bearer {ADMIN_PASSWORD}":
-        raise HTTPException(401, "Unauthorized")
-
-
-@app.get("/admin", response_class=HTMLResponse)
-async def admin_dashboard(request: Request):
-    orders = list_orders()
-    return templates.TemplateResponse("admin/dashboard.html", {
-        "request": request,
-        "orders": orders,
-        "counts": {
-            "pending": sum(1 for o in orders if o["status"] == "pending"),
-            "generating": sum(1 for o in orders if o["status"] == "generating"),
-            "review": sum(1 for o in orders if o["status"] == "review"),
-            "ready": sum(1 for o in orders if o["status"] == "ready"),
-            "delivered": sum(1 for o in orders if o["status"] == "delivered"),
-        },
-    })
+@app.get("/api/jobs/{job_id}", response_model=JobResponse)
+async def job_status(job_id: str):
+    if not _valid_job_id(job_id):
+        raise HTTPException(404, "Job not found")
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    return job
 
 
-@app.get("/admin/orders", response_class=HTMLResponse)
-async def admin_orders(request: Request):
-    orders = list_orders()
-    return templates.TemplateResponse("admin/orders.html", {
-        "request": request,
-        "orders": orders,
-    })
-
-
-@app.post("/admin/orders/{order_id}/status")
-async def admin_update_status(order_id: str, status: str, _=Depends(verify_admin)):
-    if status not in ("pending", "generating", "review", "ready", "delivered"):
-        raise HTTPException(400, "Invalid status")
-    if not update_order_status(order_id, status):
-        raise HTTPException(404, "Order not found")
-    return {"ok": True}
-
-
-@app.get("/admin/generate", response_class=HTMLResponse)
-async def admin_generate_page(request: Request):
-    return templates.TemplateResponse("admin/generate.html", {
-        "request": request,
-    })
-
-
-@app.post("/admin/generate")
-async def admin_generate(req: OrderRequest, bg: BackgroundTasks, _=Depends(verify_admin)):
-    order = create_order(req)
-    bg.add_task(generate_world, order.order_id, req.config)
-    return order
+@app.get("/api/jobs/{job_id}/download")
+async def download_world(job_id: str):
+    if not _valid_job_id(job_id):
+        raise HTTPException(404, "World file not found.")
+    zip_path = WORLDS_DIR / f"{job_id}.zip"
+    if not zip_path.exists():
+        raise HTTPException(404, "World file not found. It may still be generating.")
+    return FileResponse(
+        path=str(zip_path),
+        media_type="application/zip",
+        filename=f"grandterrain-{job_id}.zip",
+    )

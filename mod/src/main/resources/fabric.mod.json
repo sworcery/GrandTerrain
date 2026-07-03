@@ -4,9 +4,10 @@
   "version": "${version}",
   "name": "GrandTerrain",
   "description": "Massive realistic world generation with towering mountains, deep caves, and custom biomes.",
-  "authors": ["GrandTerrain Team"],
+  "authors": ["sworcery"],
   "contact": {
-    "email": "sworcery@gmail.com"
+    "email": "sworcery@gmail.com",
+    "sources": "https://github.com/sworcery/GrandTerrain"
   },
   "license": "MIT",
   "icon": "assets/grandterrain/icon.png",
@@ -17,7 +18,6 @@
     "modmenu": ["com.grandterrain.client.GrandterrainModMenu"]
   },
   "mixins": ["grandterrain.mixins.json"],
-  "accessWidener": "grandterrain.accesswidener",
   "depends": {
     "fabricloader": ">=0.18.0",
     "minecraft": ">=26.1",

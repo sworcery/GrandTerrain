@@ -6,6 +6,11 @@ services:
     volumes:
       - ./data:/app/data
     environment:
-      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - MOD_JAR_PATH=/app/data/grandterrain.jar
+      - FABRIC_API_JAR_PATH=/app/data/fabric-api.jar
+      - SERVER_JAR_PATH=/app/data/fabric-server-launch.jar
+      - SERVER_STARTUP_TIMEOUT=180
+      - GENERATION_SETTLE_TIME=30
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - MAX_CONCURRENT_JOBS=${MAX_CONCURRENT_JOBS:-1}
+    restart: unless-stopped
