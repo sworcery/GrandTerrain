@@ -30,8 +30,10 @@ def get_job(job_id: str) -> JobResponse | None:
     if not meta_path.exists():
         return None
     meta = json.loads(meta_path.read_text())
+    # .get guards: a retention sweep or partial write can leave incomplete meta;
+    # a KeyError here would turn a status poll into an unhandled 500.
     return JobResponse(
-        job_id=meta["job_id"],
-        status=meta["status"],
-        created_at=meta["created_at"],
+        job_id=meta.get("job_id", job_id),
+        status=meta.get("status", "failed"),
+        created_at=meta.get("created_at", ""),
     )

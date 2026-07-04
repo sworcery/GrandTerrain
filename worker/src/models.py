@@ -15,7 +15,8 @@ class TerrainConfig(_CamelModel):
     continental_scale: float = Field(1.0, ge=0.5, le=3.0)
     erosion_strength: float = Field(1.0, ge=0.0, le=3.0)
     sea_level: int = Field(128, ge=60, le=200)
-    world_height: int = Field(1024, ge=512, le=2048)
+    # World bounds are fixed by the mod's dimension type JSON (-256..768);
+    # they are not configurable, so no field is exposed here.
 
 
 class CaveConfig(_CamelModel):
@@ -23,7 +24,7 @@ class CaveConfig(_CamelModel):
     cave_frequency: float = Field(1.0, ge=0.5, le=3.0)
     enable_mega_caverns: bool = True
     enable_underground_rivers: bool = True
-    cavern_center_y: int = Field(-100, ge=-300, le=0)
+    cavern_center_y: int = Field(-100, ge=-250, le=0)
 
 
 class RiverConfig(_CamelModel):
@@ -64,8 +65,8 @@ class WorldConfig(_CamelModel):
             f"terrain.continentalScale={self.terrain.continental_scale}",
             f"terrain.erosionStrength={self.terrain.erosion_strength}",
             f"terrain.seaLevel={self.terrain.sea_level}",
-            f"terrain.worldMinY=-256",
-            f"terrain.worldHeight={self.terrain.world_height}",
+            "terrain.worldMinY=-256",
+            "terrain.worldHeight=1024",
             f"caves.density={self.caves.cave_density}",
             f"caves.frequency={self.caves.cave_frequency}",
             f"caves.enableMegaCaverns={str(self.caves.enable_mega_caverns).lower()}",

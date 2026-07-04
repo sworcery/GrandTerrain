@@ -29,7 +29,7 @@ export default function Home() {
           <div className="mb-3 text-2xl">1</div>
           <h3 className="text-lg font-semibold">Configure Everything</h3>
           <p className="mt-2 text-sm text-zinc-400">
-            22 parameters across terrain, caves, rivers, climate, biome
+            21 parameters across terrain, caves, rivers, climate, biome
             thresholds, and structures. Start from a preset or dial in
             every value.
           </p>
@@ -82,8 +82,9 @@ export default function Home() {
           <div className="rounded-xl border border-zinc-800 p-5">
             <h3 className="font-semibold text-emerald-400">Massive Scale</h3>
             <p className="mt-1 text-sm text-zinc-400">
-              World heights up to 2048 blocks. Mountains that dwarf vanilla
-              terrain. Deep ocean floors hundreds of blocks below sea level.
+              A 1024-block world span, from Y -256 to 768. Mountains that dwarf
+              vanilla terrain. Deep ocean floors hundreds of blocks below sea
+              level.
             </p>
           </div>
         </div>
