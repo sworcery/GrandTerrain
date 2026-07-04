@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/banner.png" alt="GrandTerrain — 16-bit mountain vista with a glowing cavern beneath" width="100%">
+</p>
+
 # GrandTerrain
 
 A Fabric mod for **massive, realistic Minecraft world generation** — towering mountains, deep multi-layer cave systems, underground rivers, and 16 custom biomes across a 1024-block-tall world — plus a web configurator to dial in the terrain and generate a downloadable world.
