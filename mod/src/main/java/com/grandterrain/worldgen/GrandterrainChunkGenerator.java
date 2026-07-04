@@ -536,6 +536,27 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
     public void spawnOriginalMobs(WorldGenRegion level) {
     }
 
+    /**
+     * Surface height as actually built by generateTerrain. Density is linear in Y,
+     * so the trilinear density interpolation over the 4-block XZ sample grid yields
+     * a surface that is the bilinear interpolation of computeSurfaceHeight at the
+     * surrounding grid corners. Using the analytic height here instead would
+     * disagree with the generated terrain by several blocks on steep ridges,
+     * making structures float or sink.
+     */
+    private double interpolatedSurfaceHeight(GrandterrainNoiseRouter r, int x, int z) {
+        int gx0 = Math.floorDiv(x, INTERP_H) * INTERP_H;
+        int gz0 = Math.floorDiv(z, INTERP_H) * INTERP_H;
+        var f = r.getTerrainDensity();
+        double h00 = f.computeSurfaceHeight(gx0, gz0);
+        double h10 = f.computeSurfaceHeight(gx0 + INTERP_H, gz0);
+        double h01 = f.computeSurfaceHeight(gx0, gz0 + INTERP_H);
+        double h11 = f.computeSurfaceHeight(gx0 + INTERP_H, gz0 + INTERP_H);
+        double fx = (x - gx0) * INV_INTERP_H;
+        double fz = (z - gz0) * INV_INTERP_H;
+        return lerp(fz, lerp(fx, h00, h10), lerp(fx, h01, h11));
+    }
+
     @Override
     public int getBaseHeight(int x, int z, Heightmap.Types type, LevelHeightAccessor level,
                              RandomState randomState) {
@@ -543,8 +564,10 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
         int minY = level.getMinY();
         int maxY = minY + level.getHeight() - 1;
 
-        double surfaceH = r.getTerrainDensity().computeSurfaceHeight(x, z);
-        int est = (int) Math.floor(surfaceH) + 1;
+        double surfaceH = interpolatedSurfaceHeight(r, x, z);
+        // First free block above the surface: solid iff y < surfaceH, so the
+        // first free Y is ceil(surfaceH) (== floor+1 except at exact integers).
+        int est = (int) Math.ceil(surfaceH);
         if (est < minY) return minY;
         if (est > maxY) return maxY;
         return est;
@@ -559,13 +582,13 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
         int seaLevel = config.seaLevel();
         int deepslateTop = minY + DEEPSLATE_TRANSITION_THICKNESS;
 
-        double surfaceH = r.getTerrainDensity().computeSurfaceHeight(x, z);
+        double surfaceH = interpolatedSurfaceHeight(r, x, z);
 
         for (int i = 0; i < height; i++) {
             int y = minY + i;
             if (y < minY + BEDROCK_LAYERS) {
                 states[i] = Blocks.BEDROCK.defaultBlockState();
-            } else if (y <= surfaceH) {
+            } else if (y < surfaceH) { // matches generateTerrain: solid iff density = surfaceH - y > 0
                 states[i] = y < deepslateTop
                         ? Blocks.DEEPSLATE.defaultBlockState()
                         : Blocks.STONE.defaultBlockState();

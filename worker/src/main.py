@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import re
@@ -25,9 +26,16 @@ _active_jobs = 0
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from .generator import ensure_dirs
+    from .generator import ensure_dirs, live_procs, reconcile_stale_jobs, sweep_old_jobs
     ensure_dirs()
+    reconcile_stale_jobs()
+    sweep_old_jobs()
     yield
+    # Kill any in-flight generation servers; task cancellation alone would
+    # orphan the JVMs during the graceful-shutdown window.
+    for proc in list(live_procs):
+        if proc.returncode is None:
+            proc.kill()
 
 
 app = FastAPI(title="GrandTerrain Worker", lifespan=lifespan)
@@ -54,12 +62,25 @@ def _valid_job_id(job_id: str) -> bool:
 
 @app.post("/api/generate", response_model=JobResponse)
 async def generate(req: GenerateRequest, bg: BackgroundTasks):
+    # _active_jobs is in-memory: correct only with a single uvicorn worker
+    # (the Dockerfile CMD default). The check-then-increment has no await
+    # between them, so it is race-free within one event loop.
     global _active_jobs
     if _active_jobs >= MAX_CONCURRENT_JOBS:
         raise HTTPException(429, "Server is busy generating another world. Try again shortly.")
-    _active_jobs += 1
+    from .generator import sweep_old_jobs
+    # Off the event loop: deleting an expired multi-hundred-MB zip inline
+    # would stall every concurrent status poll.
+    asyncio.get_running_loop().run_in_executor(None, sweep_old_jobs)
+    # create_job is fallible (disk); take the slot only after it succeeds,
+    # otherwise a single failure leaks the slot and 429s everyone forever.
     job = create_job(req)
-    bg.add_task(_run_job, job.job_id, req.config)
+    _active_jobs += 1
+    try:
+        bg.add_task(_run_job, job.job_id, req.config)
+    except Exception:
+        _active_jobs -= 1
+        raise
     return job
 
 

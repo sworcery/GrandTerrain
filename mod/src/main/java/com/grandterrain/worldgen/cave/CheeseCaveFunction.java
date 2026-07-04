@@ -13,6 +13,16 @@ public class CheeseCaveFunction implements CaveContributor {
 
     private final FastNoiseLite noise;
     private final FastNoiseLite scaleNoise;
+
+    // scaleNoise is 2D (XZ only) but sample() runs once per block down the whole
+    // column; cache it per (x,z) like CavernGenerator.ColumnCache does.
+    private static final class ColumnCache {
+        long keyX = 1L;
+        long keyZ = 1L;
+        float scale;
+    }
+    private final ThreadLocal<ColumnCache> columnCache = ThreadLocal.withInitial(ColumnCache::new);
+
     private final float density;
     private final int seaLevel;
     private final int bedrockFloor;
@@ -53,7 +63,16 @@ public class CheeseCaveFunction implements CaveContributor {
         // regardless of configured worldMinY/seaLevel.
         double depthFactor = Math.max(0, Math.min(1.0, (seaLevel - y) / depthNormalizer));
         double threshold = 0.55 - depthFactor * 0.15 * density;
-        threshold += scaleNoise.GetNoise(fx, fz) * 0.1;
+
+        ColumnCache cache = columnCache.get();
+        long kx = Double.doubleToLongBits(x == 0.0 ? 0.0 : x);
+        long kz = Double.doubleToLongBits(z == 0.0 ? 0.0 : z);
+        if (cache.keyX != kx || cache.keyZ != kz) {
+            cache.keyX = kx;
+            cache.keyZ = kz;
+            cache.scale = scaleNoise.GetNoise(fx, fz);
+        }
+        threshold += cache.scale * 0.1;
 
         if (y > seaLevel - 10) {
             threshold += Math.max(0, (y - (seaLevel - 10)) / 20.0) * 2.0;

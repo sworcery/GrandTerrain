@@ -10,7 +10,6 @@
     "sources": "https://github.com/sworcery/GrandTerrain"
   },
   "license": "MIT",
-  "icon": "assets/grandterrain/icon.png",
   "environment": "*",
   "entrypoints": {
     "main": ["com.grandterrain.Grandterrain"],

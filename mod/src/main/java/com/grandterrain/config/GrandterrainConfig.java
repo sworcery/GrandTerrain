@@ -44,8 +44,11 @@ public class GrandterrainConfig {
         continentalScale = clamp(continentalScale, 0.1f, 5.0f);
         erosionStrength = clamp(erosionStrength, 0.0f, 3.0f);
         seaLevel = clamp(seaLevel, 32, 512);
-        worldMinY = clamp(worldMinY, -2032, 0);
-        worldHeight = clamp(worldHeight, 256, 4064);
+        // World bounds are fixed by data/grandterrain/dimension_type/grandterrain.json.
+        // Datapack dimension types are static, so config cannot drive them; pin the
+        // values so the generator's reported bounds always match the real dimension.
+        worldMinY = -256;
+        worldHeight = 1024;
 
         caveDensity = clamp(caveDensity, 0.0f, 5.0f);
         caveFrequency = clamp(caveFrequency, 0.1f, 5.0f);
@@ -63,7 +66,8 @@ public class GrandterrainConfig {
         if (lowlandOffset < coastalOffset + 5) lowlandOffset = coastalOffset + 5;
         coastalOffset = clamp(coastalOffset, -200, 0);
         lowlandOffset = clamp(lowlandOffset, 0, 200);
-        cavernCenterY = clamp(cavernCenterY, -300, 0);
+        // Keep the cavern band above the bedrock floor at worldMinY (-256).
+        cavernCenterY = clamp(cavernCenterY, -250, 0);
 
         if (seaLevel < worldMinY + 10) seaLevel = worldMinY + 10;
         if (seaLevel > worldMinY + worldHeight - 10) seaLevel = worldMinY + worldHeight - 10;

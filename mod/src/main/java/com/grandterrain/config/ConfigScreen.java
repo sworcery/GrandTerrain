@@ -59,13 +59,8 @@ public class ConfigScreen {
                 .setSaveConsumer(v -> config.seaLevel = v)
                 .build());
 
-        terrain.addEntry(entries.startIntField(
-                        Component.literal("World Height"), config.worldHeight)
-                .setDefaultValue(defaults.worldHeight)
-                .setMin(512).setMax(2048)
-                .setTooltip(Component.literal("Total world height in blocks."))
-                .setSaveConsumer(v -> config.worldHeight = v)
-                .build());
+        // World height is fixed by the grandterrain dimension type JSON (-256..768);
+        // it cannot be changed at runtime, so it is not exposed here.
 
         // Caves category
         ConfigCategory caves = builder.getOrCreateCategory(Component.literal("Caves"));
