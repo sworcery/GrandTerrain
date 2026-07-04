@@ -35,6 +35,32 @@ web/     — Next.js configurator: tune parameters, generate & download a world
 worker/  — backend that runs a headless Fabric server to generate a world from a config
 ```
 
+## Running the worker (generation backend)
+
+```bash
+cd worker
+docker compose up --build
+```
+
+On first boot the container downloads everything it needs (Fabric server
+launcher, Fabric API, [Chunky](https://modrinth.com/plugin/chunky), and the
+GrandTerrain mod jar) into the mounted `data/` volume. Each generation job
+boots a headless Fabric server, pre-generates a square region around spawn
+with Chunky, and packages the world into a downloadable zip.
+
+Key environment knobs (see `worker/.env.example` for the full list):
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `PREGEN_RADIUS` | `2000` | Pre-generation radius in blocks (2000 → a 4000×4000 area); `0` disables |
+| `PREGEN_TIMEOUT` | `21600` | Hard cap in seconds; partial pre-gen still ships |
+| `MAX_CONCURRENT_JOBS` | `1` | Generation jobs allowed at once |
+| `JOB_RETENTION_HOURS` | `24` | Age after which job dirs and world zips are deleted |
+
+Rough sizing from a measured run (~17 chunks/sec on modest hardware): the
+default 2000-block radius is ~63k chunks — about an hour and a ~450 MB zip.
+Faster hardware scales roughly linearly.
+
 ## Building the mod
 
 ```bash

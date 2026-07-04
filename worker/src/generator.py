@@ -15,13 +15,19 @@ logger = logging.getLogger("grandterrain.generator")
 DATA_DIR = Path(os.getenv("DATA_DIR", "/app/data"))
 JOBS_DIR = DATA_DIR / "jobs"
 WORLDS_DIR = DATA_DIR / "worlds"
-MOD_JAR = Path(os.getenv("MOD_JAR_PATH", "/app/data/grandterrain.jar"))
-FABRIC_API_JAR = Path(os.getenv("FABRIC_API_JAR_PATH", "/app/data/fabric-api.jar"))
-SERVER_JAR = Path(os.getenv("SERVER_JAR_PATH", "/app/data/fabric-server-launch.jar"))
+MOD_JAR = Path(os.getenv("MOD_JAR_PATH", str(DATA_DIR / "grandterrain.jar")))
+FABRIC_API_JAR = Path(os.getenv("FABRIC_API_JAR_PATH", str(DATA_DIR / "fabric-api.jar")))
+SERVER_JAR = Path(os.getenv("SERVER_JAR_PATH", str(DATA_DIR / "fabric-server-launch.jar")))
 
 STARTUP_TIMEOUT = int(os.getenv("SERVER_STARTUP_TIMEOUT", "180"))
 GENERATION_SETTLE = int(os.getenv("GENERATION_SETTLE_TIME", "30"))
 RETENTION_HOURS = int(os.getenv("JOB_RETENTION_HOURS", "24"))
+
+# Pre-generation via the Chunky mod, driven over the server console.
+# Radius is in blocks from spawn (2000 -> a 4000x4000 area); 0 disables.
+CHUNKY_JAR = Path(os.getenv("CHUNKY_JAR_PATH", str(DATA_DIR / "chunky.jar")))
+PREGEN_RADIUS = int(os.getenv("PREGEN_RADIUS", "2000"))
+PREGEN_TIMEOUT = int(os.getenv("PREGEN_TIMEOUT", "21600"))
 
 # In-flight server processes, tracked so app shutdown can kill them. A cancelled
 # background task raises CancelledError (a BaseException), which `except Exception`
@@ -120,6 +126,8 @@ def _setup_server_instance(job_id: str, config: WorldConfig) -> Path:
     shutil.copy(MOD_JAR, mods_dir / MOD_JAR.name)
     if FABRIC_API_JAR.exists():
         shutil.copy(FABRIC_API_JAR, mods_dir / FABRIC_API_JAR.name)
+    if CHUNKY_JAR.exists() and PREGEN_RADIUS > 0:
+        shutil.copy(CHUNKY_JAR, mods_dir / CHUNKY_JAR.name)
 
     config_dir = instance_dir / "config"
     config_dir.mkdir()
@@ -157,7 +165,17 @@ async def generate_world(job_id: str, config: WorldConfig) -> Path | None:
         "started_at": datetime.now(timezone.utc).isoformat(),
     })
 
-    instance_dir = _setup_server_instance(job_id, config)
+    try:
+        instance_dir = _setup_server_instance(job_id, config)
+    except Exception:
+        # E.g. the mod jar never downloaded (bootstrap starts the API anyway).
+        # Without this the job stays "generating" until the next restart.
+        logger.exception("Failed to set up server instance for job %s", job_id)
+        _update_meta(job_id, {
+            "status": "failed",
+            "failed_at": datetime.now(timezone.utc).isoformat(),
+        })
+        return None
     server_jar = instance_dir / "fabric-server-launch.jar"
     success = False
 
@@ -177,61 +195,110 @@ async def generate_world(job_id: str, config: WorldConfig) -> Path | None:
 
         try:
             with open(log_path, "w") as log_file:
-                async def read_output():
-                    nonlocal server_ready
+                async def read_until(predicate):
+                    """Consume stdout into the log until predicate matches.
+
+                    Returns True on match, False on EOF (server exited).
+                    """
                     while True:
                         line = await proc.stdout.readline()
                         if not line:
-                            break
+                            return False
                         decoded = line.decode("utf-8", errors="replace").rstrip()
                         log_file.write(decoded + "\n")
                         log_file.flush()
                         logger.debug("[mc] %s", decoded)
-                        if "Done (" in decoded and ")!" in decoded:
-                            server_ready = True
-                            return
+                        if predicate(decoded):
+                            return True
 
                 # Total wall-clock budget for startup. Wrapping each readline
                 # instead would reset the timer on every log line, so a
                 # chatty-but-stuck server could hold the job slot forever.
-                await asyncio.wait_for(read_output(), timeout=STARTUP_TIMEOUT)
+                server_ready = await asyncio.wait_for(
+                    read_until(lambda l: "Done (" in l and ")!" in l),
+                    timeout=STARTUP_TIMEOUT,
+                )
 
                 if server_ready:
                     success = True
 
+                    chunky_loaded = (instance_dir / "mods" / CHUNKY_JAR.name).exists()
+                    if chunky_loaded and PREGEN_RADIUS > 0:
+                        logger.info(
+                            "Pre-generating %d-block radius for job %s", PREGEN_RADIUS, job_id
+                        )
+                        proc.stdin.write(
+                            f"chunky radius {PREGEN_RADIUS}\nchunky start\n".encode()
+                        )
+                        await proc.stdin.drain()
+                        try:
+                            finished = await asyncio.wait_for(
+                                read_until(lambda l: "Task finished" in l),
+                                timeout=PREGEN_TIMEOUT,
+                            )
+                            if not finished:
+                                # EOF mid-pregen: the server crashed.
+                                logger.error(
+                                    "Server exited during pre-generation for job %s", job_id
+                                )
+                                success = False
+                        except asyncio.TimeoutError:
+                            # Best-effort: the chunks generated so far are a
+                            # valid (just smaller) pre-genned world.
+                            logger.warning(
+                                "Pre-generation timed out for job %s — packaging what completed",
+                                job_id,
+                            )
                     async def drain_rest():
-                        # Keep consuming stdout after "Done": a chatty server
-                        # can fill the 64K pipe buffer during the settle/stop
-                        # window and block right when we send "stop".
+                        # Keep consuming stdout through the settle/stop window:
+                        # a chatty server can fill the 64K pipe buffer and
+                        # block right when we send "stop".
                         while True:
                             rest = await proc.stdout.readline()
                             if not rest:
                                 return
                             log_file.write(rest.decode("utf-8", errors="replace"))
 
+                    # Must start before any settle sleep — during pre-gen the
+                    # read_until loop was the drainer, but the settle path has
+                    # no other stdout consumer.
                     drain = asyncio.create_task(drain_rest())
 
-                    logger.info("Server ready for job %s, letting chunks settle", job_id)
-                    await asyncio.sleep(GENERATION_SETTLE)
+                    if not (chunky_loaded and PREGEN_RADIUS > 0):
+                        logger.info("Server ready for job %s, letting chunks settle", job_id)
+                        await asyncio.sleep(GENERATION_SETTLE)
 
-                    logger.info("Stopping server for job %s", job_id)
-                    proc.stdin.write(b"stop\n")
-                    await proc.stdin.drain()
+                    if proc.returncode is None:
+                        logger.info("Stopping server for job %s", job_id)
+                        try:
+                            proc.stdin.write(b"stop\n")
+                            await proc.stdin.drain()
+                        except (BrokenPipeError, ConnectionResetError):
+                            # Stdout EOF can precede process reaping; the
+                            # server is already dead and success reflects it.
+                            logger.debug("Server pipe already closed for job %s", job_id)
 
-                    try:
-                        await asyncio.wait_for(proc.wait(), timeout=60)
-                    except asyncio.TimeoutError:
-                        logger.warning("Server didn't stop cleanly, terminating")
-                        proc.terminate()
-                        await proc.wait()
+                        try:
+                            await asyncio.wait_for(proc.wait(), timeout=60)
+                        except asyncio.TimeoutError:
+                            logger.warning("Server didn't stop cleanly, terminating")
+                            proc.terminate()
+                            await proc.wait()
 
                     try:
                         await asyncio.wait_for(drain, timeout=10)
                     except asyncio.TimeoutError:
                         drain.cancel()
+                        try:
+                            # Let the cancellation land before log_file closes,
+                            # or the task can write to a closed file.
+                            await drain
+                        except (asyncio.CancelledError, ValueError):
+                            pass
                 else:
                     logger.error("Server never became ready for job %s", job_id)
-                    proc.terminate()
+                    if proc.returncode is None:
+                        proc.terminate()
                     await proc.wait()
 
         except asyncio.TimeoutError:
