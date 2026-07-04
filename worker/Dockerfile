@@ -27,4 +27,6 @@ RUN mkdir -p /app/data/jobs /app/data/worlds
 
 EXPOSE 8080
 
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# Bootstrap downloads the runtime jars (Fabric server, Fabric API, Chunky,
+# GrandTerrain) into DATA_DIR on first boot, then hands off to the API.
+CMD ["sh", "-c", "python -m src.bootstrap && exec uvicorn src.main:app --host 0.0.0.0 --port 8080"]

@@ -14,4 +14,7 @@ services:
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
       - MAX_CONCURRENT_JOBS=${MAX_CONCURRENT_JOBS:-1}
       - JOB_RETENTION_HOURS=${JOB_RETENTION_HOURS:-24}
+      - CHUNKY_JAR_PATH=/app/data/chunky.jar
+      - PREGEN_RADIUS=${PREGEN_RADIUS:-2000}
+      - PREGEN_TIMEOUT=${PREGEN_TIMEOUT:-21600}
     restart: unless-stopped
