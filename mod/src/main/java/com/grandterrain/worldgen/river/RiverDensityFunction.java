@@ -3,20 +3,40 @@ package com.grandterrain.worldgen.river;
 import com.grandterrain.config.ConfigSnapshot;
 import com.grandterrain.worldgen.noise.ContinentalNoise;
 import com.grandterrain.worldgen.noise.FastNoiseLite;
+import com.grandterrain.worldgen.noise.ValleyNetworkNoise;
 
 /**
- * Generates surface river paths using Voronoi edge detection.
- * Rivers carve channels into the terrain density, creating natural waterways.
+ * Surface rivers along the shared valley network (see ValleyNetworkNoise —
+ * rivers run in the valleys that erosion carved, with matching meander).
  *
- * Minimum carve depth of 1 block is enforced: columns that are merely "near" a river
- * do not get shallow 1-block ditches - only columns with centeredness above threshold carve.
+ * Three shaping controls keep the network from being a geometric honeycomb:
+ *  - a low-frequency selector gates which valley edges actually carry water,
+ *    tapering river width to zero instead of cutting hard;
+ *  - carve depth fades with surface altitude (no rivers over snow peaks —
+ *    high-altitude valleys keep their erosion carve but stay dry);
+ *  - width varies along the run.
+ *
+ * Minimum carve depth of 1.5 blocks is enforced: columns merely "near" a
+ * river do not get shallow 1-block ditches.
  */
 public class RiverDensityFunction {
 
     /** Minimum carve depth in blocks. Columns below this threshold skip carving. */
     private static final double MIN_CARVE = 1.5;
 
-    private final FastNoiseLite edgeNoise;
+    /** Base half-width of rivers in edge-distance units (measured metric). */
+    private static final double BASE_WIDTH = 0.05;
+
+    /** Selector gate: keep edges where selector noise exceeds this. */
+    private static final double SELECTOR_CUTOFF = -0.15;
+    private static final double SELECTOR_FADE = 0.35;
+
+    /** Altitude fade band for river water (blocks above sea level). */
+    private static final int DRY_FADE_START = 60;
+    private static final int DRY_FADE_END = 220;
+
+    private final ValleyNetworkNoise network;
+    private final FastNoiseLite selectorNoise;
     private final FastNoiseLite elevationNoise;
     private final FastNoiseLite widthVariation;
     private final float riverWidth;
@@ -28,12 +48,14 @@ public class RiverDensityFunction {
         this.riverDepth = config.riverDepth();
         this.seaLevel = config.seaLevel();
 
-        // Linear Euclidean so Distance2Sub is in its documented range.
-        edgeNoise = new FastNoiseLite((int) (seed ^ 0x21764E20L));
-        edgeNoise.SetNoiseType(FastNoiseLite.NoiseType.Cellular);
-        edgeNoise.SetCellularDistanceFunction(FastNoiseLite.CellularDistanceFunction.Euclidean);
-        edgeNoise.SetCellularReturnType(FastNoiseLite.CellularReturnType.Distance2Sub);
-        edgeNoise.SetFrequency(1.0f / 800.0f);
+        // Same network as ErosionNoise: rivers follow valley floors.
+        network = new ValleyNetworkNoise(seed);
+
+        selectorNoise = new FastNoiseLite((int) (seed ^ 0x5E1EC70FL));
+        selectorNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
+        selectorNoise.SetFractalType(FastNoiseLite.FractalType.FBm);
+        selectorNoise.SetFractalOctaves(2);
+        selectorNoise.SetFrequency(1.0f / 2800.0f);
 
         elevationNoise = new FastNoiseLite((int) (seed ^ 0x21764E21L));
         elevationNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
@@ -46,27 +68,57 @@ public class RiverDensityFunction {
         widthVariation.SetFrequency(1.0f / 200.0f);
     }
 
+    /** Smoothstep of t clamped to [0,1]. */
+    private static double smooth01(double t) {
+        if (t <= 0) return 0;
+        if (t >= 1) return 1;
+        return t * t * (3 - 2 * t);
+    }
+
+    /** Fraction [0,1] of this edge's water presence from the sparsity gate. */
+    private double selectorGate(float fx, float fz) {
+        double sel = selectorNoise.GetNoise(fx, fz);
+        return smooth01((sel - SELECTOR_CUTOFF) / SELECTOR_FADE);
+    }
+
     /**
      * Returns the river carving depth in blocks for this XZ position.
-     * Zero if column is outside the river or below minimum carve threshold.
+     * Zero if the column is outside a selected river or below minimum carve.
      */
     public double sampleRiverCarving(double x, double z) {
         float fx = ContinentalNoise.wrapToFloat(x);
         float fz = ContinentalNoise.wrapToFloat(z);
 
-        double edge = edgeNoise.GetNoise(fx, fz);
-        double edgeDist = Math.abs(edge);
+        double gate = selectorGate(fx, fz);
+        if (gate <= 0) return 0.0;
+
+        double edgeDist = network.edgeDistance01(x, z);
 
         double widthMod = 1.0 + widthVariation.GetNoise(fx, fz) * 0.4;
-        double effectiveWidth = 0.08 * riverWidth * widthMod;
+        double effectiveWidth = BASE_WIDTH * riverWidth * widthMod * gate;
 
         if (edgeDist > effectiveWidth) return 0.0;
 
         double centeredness = 1.0 - (edgeDist / effectiveWidth);
-        double depth = centeredness * centeredness * 8.0 * riverDepth;
+        double depth = centeredness * centeredness * 8.0 * riverDepth * (0.4 + 0.6 * gate);
 
         // Skip shallow edge ditches
         return depth < MIN_CARVE ? 0.0 : depth;
+    }
+
+    /**
+     * Attenuate a carve depth by the surface altitude it applies at: full
+     * strength near sea level, fading to zero well below the snow line so
+     * rivers don't run over mountaintops. Returns 0 when the remaining carve
+     * drops below the minimum.
+     */
+    public double attenuateForAltitude(double carve, double surfaceY) {
+        double lo = seaLevel + DRY_FADE_START;
+        double hi = seaLevel + DRY_FADE_END;
+        if (surfaceY <= lo) return carve;
+        if (surfaceY >= hi) return 0.0;
+        double faded = carve * (1.0 - smooth01((surfaceY - lo) / (hi - lo)));
+        return faded < MIN_CARVE ? 0.0 : faded;
     }
 
     /**
@@ -86,11 +138,12 @@ public class RiverDensityFunction {
         return Math.max(channelFloor, Math.min(channelTop, desiredLevel));
     }
 
-    /** Check if this position is on a river path (for biome placement). */
+    /** Check if this position is on a selected river path (ignores altitude). */
     public boolean isRiver(double x, double z) {
         float fx = ContinentalNoise.wrapToFloat(x);
         float fz = ContinentalNoise.wrapToFloat(z);
-        double edge = edgeNoise.GetNoise(fx, fz);
-        return Math.abs(edge) < 0.06 * riverWidth;
+        double gate = selectorGate(fx, fz);
+        if (gate <= 0) return false;
+        return network.edgeDistance01(x, z) < 0.04 * riverWidth * gate;
     }
 }

@@ -6,7 +6,15 @@ import com.grandterrain.worldgen.noise.FastNoiseLite;
 
 public class CavernGenerator implements CaveContributor {
 
-    private static final double CAVERN_THRESHOLD = 0.08;
+    /**
+     * FNL Cellular/Distance (Euclidean) measured output: [-1, +0.05] with
+     * cell CENTERS at -1 (see mod/tools/RangeProbe). d01 = value + 1 gives a
+     * 0-at-center distance. Caverns spawn where d01 < CAVERN_THRESHOLD —
+     * one pocket around each Voronoi cell center (cells ~500 blocks).
+     * The old code compared the raw value against 0.08 as if the range were
+     * [0, 1], which was true for 100% of terrain and hollowed out the world.
+     */
+    private static final double CAVERN_THRESHOLD = 0.25;
 
     private final FastNoiseLite cellNoise;
     private final FastNoiseLite floorNoise;
@@ -46,8 +54,10 @@ public class CavernGenerator implements CaveContributor {
         floorNoise.SetFrequency(1.0f / 30.0f);
     }
 
-    @Override public int minY() { return bedrockFloor; }
-    @Override public int maxY() { return seaLevel - 40; }
+    // Caverns live at cavernCenterY ± (40 wander + up to 36 vertical radius);
+    // bound the contributor to that band so the pipeline early-out works.
+    @Override public int minY() { return Math.max(bedrockFloor, cavernCenterY - 80); }
+    @Override public int maxY() { return Math.min(seaLevel - 40, cavernCenterY + 80); }
 
     private ColumnCache ensureColumn(double x, double z) {
         long kx = Double.doubleToLongBits(x == 0.0 ? 0.0 : x);
@@ -58,9 +68,9 @@ public class CavernGenerator implements CaveContributor {
         float fx = ContinentalNoise.wrapToFloat(x);
         float fz = ContinentalNoise.wrapToFloat(z);
 
-        c.cellDist = cellNoise.GetNoise(fx, fz);
+        c.cellDist = cellNoise.GetNoise(fx, fz) + 1.0; // 0 at cell center (measured)
         if (c.cellDist <= CAVERN_THRESHOLD) {
-            c.proximity = 1.0 - (c.cellDist / CAVERN_THRESHOLD);
+            c.proximity = 1.0 - (c.cellDist / CAVERN_THRESHOLD); // [0,1], 1 at center
             c.cavernRadius = 25.0 + c.proximity * 35.0;
             c.centerY = cavernCenterY + floorNoise.GetNoise(fx * 0.5f, fz * 0.5f) * 40.0;
             c.verticalRadius = c.cavernRadius * 0.6;

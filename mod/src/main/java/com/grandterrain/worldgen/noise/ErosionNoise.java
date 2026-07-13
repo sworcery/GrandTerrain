@@ -10,7 +10,7 @@ import com.grandterrain.config.ConfigSnapshot;
 public class ErosionNoise {
 
     private final FastNoiseLite macroNoise;
-    private final FastNoiseLite valleyNoise;
+    private final ValleyNetworkNoise valleyNetwork;
     private final FastNoiseLite detailNoise;
     private final float erosionStrength;
 
@@ -23,13 +23,8 @@ public class ErosionNoise {
         macroNoise.SetFractalOctaves(3);
         macroNoise.SetFrequency(1.0f / 4000.0f);
 
-        // Use linear Euclidean distance (not squared) so Distance2Sub output
-        // actually ranges [-1, 1] as thresholds assume.
-        valleyNoise = new FastNoiseLite((int) (seed ^ 0x87654321L));
-        valleyNoise.SetNoiseType(FastNoiseLite.NoiseType.Cellular);
-        valleyNoise.SetCellularDistanceFunction(FastNoiseLite.CellularDistanceFunction.Euclidean);
-        valleyNoise.SetCellularReturnType(FastNoiseLite.CellularReturnType.Distance2Sub);
-        valleyNoise.SetFrequency(1.0f / 800.0f);
+        // Shared with RiverDensityFunction so rivers follow valley floors.
+        valleyNetwork = new ValleyNetworkNoise(seed);
 
         detailNoise = new FastNoiseLite((int) (seed ^ 0xABCDEF01L));
         detailNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
@@ -51,13 +46,15 @@ public class ErosionNoise {
      * Returns the valley carving depth. Range: [0, 1] * erosionStrength.
      * Values near 1 indicate valley floors (close to Voronoi cell edges).
      */
+    /** Half-width of the valley influence zone in edge-distance units. */
+    private static final double VALLEY_WIDTH = 0.35;
+
     public double sampleValley(double x, double z) {
-        float raw = valleyNoise.GetNoise(ContinentalNoise.wrapToFloat(x),
-                ContinentalNoise.wrapToFloat(z));
-        // Distance2Sub with linear Euclidean returns roughly [-1, 1].
-        // Near-zero values are cell edges (the valleys we want).
-        double absEdge = Math.min(1.0, Math.abs(raw));
-        double valley = 1.0 - absEdge; // 1.0 at edge, 0.0 at center
+        // 0 on the warped valley network, growing into cell interiors (the old
+        // code treated FNL's -1-at-edge output as 0-at-edge, which made
+        // "valleys" round pits at cell centers instead of connected networks).
+        double edge01 = valleyNetwork.edgeDistance01(x, z);
+        double valley = Math.max(0.0, 1.0 - edge01 / VALLEY_WIDTH); // 1 at edge
         return valley * valley * erosionStrength;
     }
 
