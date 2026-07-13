@@ -146,11 +146,16 @@ public class GrandterrainBiomeSource extends BiomeSource {
     private Climate.ParameterList<Holder<Biome>> buildBiomeParameters(
             float cTemperate, float cAlpine, float cMountain, float cRocky) {
 
-        Climate.Parameter T_FROZEN = Climate.Parameter.span(-1.5f, -0.3f);
-        Climate.Parameter T_COOL = Climate.Parameter.span(-0.3f, 0.15f);
-        Climate.Parameter T_WARM = Climate.Parameter.span(0.15f, 0.5f);
-        Climate.Parameter T_HOT = Climate.Parameter.span(0.5f, 1.5f);
-        Climate.Parameter T_NOT_FROZEN = Climate.Parameter.span(-0.3f, 1.5f);
+        // Bands calibrated to the MEASURED ClimateNoise distribution (FBm
+        // concentrates near 0; see mod/tools/ClimateProbe), not a uniform
+        // [-1.5,1.5]. Quantile splits ~16/33/26/25% keep every temperature
+        // tier populated — the old 0.5 HOT cutoff caught only 7% of the map
+        // and starved deserts/savannas to under 0.5% each.
+        Climate.Parameter T_FROZEN = Climate.Parameter.span(-1.5f, -0.35f);
+        Climate.Parameter T_COOL = Climate.Parameter.span(-0.35f, -0.02f);
+        Climate.Parameter T_WARM = Climate.Parameter.span(-0.02f, 0.25f);
+        Climate.Parameter T_HOT = Climate.Parameter.span(0.25f, 1.5f);
+        Climate.Parameter T_NOT_FROZEN = Climate.Parameter.span(-0.35f, 1.5f);
 
         Climate.Parameter C_LOW = Climate.Parameter.span(-1.5f, cTemperate);
         Climate.Parameter C_TEMPERATE = Climate.Parameter.span(cTemperate, cAlpine);
