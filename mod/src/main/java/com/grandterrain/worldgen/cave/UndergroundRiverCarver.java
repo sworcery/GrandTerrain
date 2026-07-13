@@ -17,7 +17,15 @@ import com.grandterrain.worldgen.noise.FastNoiseLite;
 public class UndergroundRiverCarver implements CaveContributor {
 
     private static final double RIVER_RANGE = 6.0;
-    private static final double RIVER_WIDTH = 0.12;
+    /**
+     * Width in edge-distance units. FNL Distance2Sub outputs [-1, +0.15]
+     * with cell EDGES at -1 (measured; see mod/tools/RangeProbe), so
+     * edgeDist = value + 1 is 0 exactly on the connected Voronoi edge
+     * network. The old |value| < width test selected disconnected blobs
+     * near cell interiors instead — underground rivers effectively never
+     * generated (~0.03% carve).
+     */
+    private static final double RIVER_WIDTH = 0.06;
 
     /** River centre-line is this many blocks below sea level (default: 208 below). */
     private static final int RIVER_DEPTH_BELOW_SEA = 208;
@@ -74,7 +82,7 @@ public class UndergroundRiverCarver implements CaveContributor {
         float fx = ContinentalNoise.wrapToFloat(x);
         float fz = ContinentalNoise.wrapToFloat(z);
         c.riverBaseY = riverBaseCenter + depthNoise.GetNoise(fx, fz) * RIVER_VERTICAL_WANDER;
-        c.edgeDist = Math.abs(edgeNoise.GetNoise(fx, fz));
+        c.edgeDist = edgeNoise.GetNoise(fx, fz) + 1.0; // 0 on the edge network
         c.keyX = kx;
         c.keyZ = kz;
         c.valid = true;

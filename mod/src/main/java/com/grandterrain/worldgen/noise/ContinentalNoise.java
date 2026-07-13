@@ -14,9 +14,9 @@ import com.grandterrain.config.ConfigSnapshot;
  */
 public class ContinentalNoise {
 
-    // Period at which float precision breaks down for noise (2^21 ~ 2M blocks).
-    // Wrap coordinates modulo this to keep them near zero.
-    private static final double COORD_WRAP = 2097152.0;
+    // Wrap period for float-safe noise coordinates (2^24). The symmetric wrap
+    // below keeps |wrapped| <= 2^23, where float ulp is <= 0.5 blocks.
+    private static final double COORD_WRAP = 16777216.0;
 
     private final FastNoiseLite noise;
     private final FastNoiseLite warpX;
@@ -47,9 +47,18 @@ public class ContinentalNoise {
         warpZ.SetFrequency(1.0f / 6000.0f);
     }
 
-    /** Wrap doubles into a range where float precision is safe. */
+    /**
+     * Wrap doubles into a float-precision-safe range, symmetric around zero.
+     *
+     * The previous floor-based wrap mapped negatives to the TOP of the wrap
+     * range, so noise inputs jumped by the full period exactly at x=0/z=0 —
+     * a hard terrain/climate seam through every world's spawn axes (found by
+     * rendering across the origin; see mod/tools/TerrainPreview). Math.round
+     * keeps the identity mapping near the origin and moves the unavoidable
+     * discontinuity to ±COORD_WRAP/2 = ±8,388,608 blocks.
+     */
     public static float wrapToFloat(double v) {
-        double wrapped = v - Math.floor(v / COORD_WRAP) * COORD_WRAP;
+        double wrapped = v - Math.round(v / COORD_WRAP) * COORD_WRAP;
         return (float) wrapped;
     }
 

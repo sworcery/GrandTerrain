@@ -492,6 +492,11 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
                 }
                 if (surfaceY < 0 || solidCount < carveDepth + 2) continue;
 
+                // High-altitude valleys stay dry: fade the carve with height.
+                riverCarving = r.getSurfaceRivers().attenuateForAltitude(riverCarving, surfaceY);
+                if (riverCarving <= 0) continue;
+                carveDepth = (int) Math.ceil(riverCarving);
+
                 double waterLevel = r.getSurfaceRivers()
                         .getRiverWaterLevel(worldX, worldZ, surfaceY, carveDepth);
 

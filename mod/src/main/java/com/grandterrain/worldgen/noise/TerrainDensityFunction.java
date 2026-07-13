@@ -63,7 +63,8 @@ public class TerrainDensityFunction {
                 ContinentalNoise.wrapToFloat(x),
                 ContinentalNoise.wrapToFloat(z)) * 30.0;
 
-        double surfaceHeight = baseHeight + mountainHeight - valleyDepth + detailContribution + baseTerrain;
+        double surfaceHeight = softCeiling(
+                baseHeight + mountainHeight - valleyDepth + detailContribution + baseTerrain);
         double density = surfaceHeight - y;
 
         if (y < config.worldMinY() + 8) {
@@ -90,7 +91,24 @@ public class TerrainDensityFunction {
         double baseTerrain = baseTerrainNoise.GetNoise(
                 ContinentalNoise.wrapToFloat(x),
                 ContinentalNoise.wrapToFloat(z)) * 30.0;
-        return baseHeight + mountainHeight - valleyDepth + detailContribution + baseTerrain;
+        return softCeiling(baseHeight + mountainHeight - valleyDepth + detailContribution + baseTerrain);
+    }
+
+    /**
+     * Asymptotically compress heights approaching the world ceiling. At the
+     * default mountain scale the raw sum can exceed worldMinY + worldHeight
+     * (measured max ~805 vs a 768 ceiling), which would clip peaks into flat
+     * mesas at the top of the world. Compression starts 120 blocks below the
+     * ceiling and approaches (ceiling - 20) but never reaches it, preserving
+     * peak shape. C1-continuous at the transition (slope 1 at start).
+     */
+    private double softCeiling(double h) {
+        double top = config.worldMinY() + config.worldHeight();
+        double start = top - 120.0;
+        if (h <= start) return h;
+        double excess = h - start;
+        double span = 100.0;
+        return start + span * (excess / (excess + span));
     }
 
     private double getCachedSlopeAttenuation(double x, double z) {

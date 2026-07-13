@@ -38,6 +38,20 @@ jobs:
       - name: Run worker tests
         run: python -m pytest worker/tests -q
 
+  # Compiles the MC-free worldgen code + evaluation tools without Gradle or
+  # any Minecraft download — catches noise/cave/river compile breakage fast.
+  worldgen-tools:
+    if: ${{ github.server_url == 'https://github.com' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+      - run: javac -sourcepath mod/src/main/java -d /tmp/gt-tools mod/tools/*.java
+      - run: java -cp /tmp/gt-tools RangeProbe
+
   datapack-json:
     if: ${{ github.server_url == 'https://github.com' }}
     runs-on: ubuntu-latest
