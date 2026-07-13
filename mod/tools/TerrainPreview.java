@@ -85,20 +85,20 @@ public final class TerrainPreview {
         List<Entry> entries = new ArrayList<>();
         // order matches buildBiomeParameters; ids index BIOME_NAMES
         entries.add(new Entry(-1.5f, 1.5f, -1.5f, 1.5f, cR, 1.5f, 7));          // snow_peaks
-        entries.add(new Entry(-1.5f, -0.3f, -1.5f, 1.5f, -1.5f, cR, 13));       // tundra
-        entries.add(new Entry(-0.3f, 1.5f, -1.5f, 1.5f, cM, cR, 6));            // rocky_highlands
-        entries.add(new Entry(-0.3f, 1.5f, -1.5f, 1.5f, cA, cM, 5));            // mountain_pine_forest
-        entries.add(new Entry(-0.3f, 1.5f, -1.5f, 0.3f, cT, cA, 4));            // alpine_meadow
-        entries.add(new Entry(-0.3f, 1.5f, 0.3f, 1.5f, cT, cA, 8));             // deep_valley
-        entries.add(new Entry(0.5f, 1.5f, -1.5f, -0.4f, -1.5f, cT, 9));         // volcanic
-        entries.add(new Entry(0.5f, 1.5f, -0.4f, -0.2f, -1.5f, cT, 10));        // desert
-        entries.add(new Entry(0.5f, 1.5f, -0.2f, 0.4f, -1.5f, cT, 11));         // savanna
-        entries.add(new Entry(0.5f, 1.5f, 0.4f, 1.5f, -1.5f, cT, 12));          // swamp
-        entries.add(new Entry(0.15f, 0.5f, 0.4f, 1.5f, -1.5f, cT, 15));         // dark_forest
-        entries.add(new Entry(0.15f, 0.5f, 0.0f, 0.4f, -1.5f, cT, 3));          // temperate_forest
-        entries.add(new Entry(0.15f, 0.5f, -1.5f, 0.0f, -1.5f, cT, 2));         // lowland_plains
-        entries.add(new Entry(-0.3f, 0.15f, 0.2f, 1.5f, -1.5f, cT, 14));        // birch_forest
-        entries.add(new Entry(-0.3f, 0.15f, -1.5f, 0.2f, -1.5f, cT, 2));        // lowland_plains
+        entries.add(new Entry(-1.5f, -0.35f, -1.5f, 1.5f, -1.5f, cR, 13));      // tundra
+        entries.add(new Entry(-0.35f, 1.5f, -1.5f, 1.5f, cM, cR, 6));           // rocky_highlands
+        entries.add(new Entry(-0.35f, 1.5f, -1.5f, 1.5f, cA, cM, 5));           // mountain_pine_forest
+        entries.add(new Entry(-0.35f, 1.5f, -1.5f, 0.3f, cT, cA, 4));           // alpine_meadow
+        entries.add(new Entry(-0.35f, 1.5f, 0.3f, 1.5f, cT, cA, 8));            // deep_valley
+        entries.add(new Entry(0.25f, 1.5f, -1.5f, -0.4f, -1.5f, cT, 9));        // volcanic
+        entries.add(new Entry(0.25f, 1.5f, -0.4f, -0.2f, -1.5f, cT, 10));       // desert
+        entries.add(new Entry(0.25f, 1.5f, -0.2f, 0.4f, -1.5f, cT, 11));        // savanna
+        entries.add(new Entry(0.25f, 1.5f, 0.4f, 1.5f, -1.5f, cT, 12));         // swamp
+        entries.add(new Entry(-0.02f, 0.25f, 0.4f, 1.5f, -1.5f, cT, 15));       // dark_forest
+        entries.add(new Entry(-0.02f, 0.25f, 0.0f, 0.4f, -1.5f, cT, 3));        // temperate_forest
+        entries.add(new Entry(-0.02f, 0.25f, -1.5f, 0.0f, -1.5f, cT, 2));       // lowland_plains
+        entries.add(new Entry(-0.35f, -0.02f, 0.2f, 1.5f, -1.5f, cT, 14));      // birch_forest
+        entries.add(new Entry(-0.35f, -0.02f, -1.5f, 0.2f, -1.5f, cT, 2));      // lowland_plains
 
         double[][] height = new double[n][n];
         int[][] biome = new int[n][n];
