@@ -39,7 +39,19 @@ web/     — Next.js configurator: tune parameters, generate & download a world
 worker/  — backend that runs a headless Fabric server to generate a world from a config
 ```
 
-## Running the worker (generation backend)
+## Running the full stack (web + worker)
+
+```bash
+# from the repo root; use your LAN IP so browsers can reach the worker
+NEXT_PUBLIC_WORKER_URL=http://<this-host>:8080 docker compose up --build
+```
+
+Web configurator on port 3000, generation worker on port 8080.
+`NEXT_PUBLIC_WORKER_URL` is baked into the web bundle at build time and must
+be the worker address reachable from the *browser* (LAN IP, not localhost,
+unless you browse from the same machine).
+
+## Running the worker alone
 
 ```bash
 cd worker

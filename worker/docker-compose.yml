@@ -1,3 +1,5 @@
+# NOTE: keep the env block in sync with the root docker-compose.yml (the
+# full web+worker stack) — same variables, same defaults.
 services:
   worker:
     build: .

@@ -1,0 +1,40 @@
+# Full self-hosted stack: web configurator + generation worker.
+#
+#   NEXT_PUBLIC_WORKER_URL=http://<this-host>:8080 docker compose up --build
+#
+# NEXT_PUBLIC_WORKER_URL must be the worker address reachable from the
+# BROWSER (it is baked into the web bundle at build time). For a LAN host,
+# use the host's LAN IP, not localhost.
+services:
+  # NOTE: keep this env block in sync with worker/docker-compose.yml (the
+  # standalone worker deployment) — same variables, same defaults.
+  worker:
+    build: ./worker
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./worker/data:/app/data
+    environment:
+      - MOD_JAR_PATH=/app/data/grandterrain.jar
+      - FABRIC_API_JAR_PATH=/app/data/fabric-api.jar
+      - SERVER_JAR_PATH=/app/data/fabric-server-launch.jar
+      - CHUNKY_JAR_PATH=/app/data/chunky.jar
+      - SERVER_STARTUP_TIMEOUT=180
+      - GENERATION_SETTLE_TIME=30
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - MAX_CONCURRENT_JOBS=${MAX_CONCURRENT_JOBS:-1}
+      - JOB_RETENTION_HOURS=${JOB_RETENTION_HOURS:-24}
+      - PREGEN_RADIUS=${PREGEN_RADIUS:-2000}
+      - PREGEN_TIMEOUT=${PREGEN_TIMEOUT:-21600}
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      args:
+        - NEXT_PUBLIC_WORKER_URL=${NEXT_PUBLIC_WORKER_URL:-http://localhost:8080}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - worker
+    restart: unless-stopped
