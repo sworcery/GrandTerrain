@@ -128,9 +128,36 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
                 EnumSet.of(Heightmap.Types.OCEAN_FLOOR_WG, Heightmap.Types.WORLD_SURFACE_WG));
     }
 
+    /**
+     * Avalanche hash for surface dithering. The previous per-site linear
+     * hashes (x*31+z*17 &amp; mask, etc.) all reduce modulo a power of two to
+     * straight diagonal stripe patterns — visible as printed lines, and
+     * glaring in Voxy LOD color maps. Different consumers take different
+     * bit ranges of the same hash so their patterns are uncorrelated.
+     */
+    private static int hash2(int x, int z) {
+        int h = x * 0x85EBCA6B + z * 0xC2B2AE35;
+        h ^= h >>> 15;
+        h *= 0x27D4EB2F;
+        h ^= h >>> 13;
+        return h;
+    }
+
+    private static int hash3(int x, int y, int z) {
+        int h = x * 0x85EBCA6B + y * 0x9E3779B9 + z * 0xC2B2AE35;
+        h ^= h >>> 15;
+        h *= 0x27D4EB2F;
+        h ^= h >>> 13;
+        return h;
+    }
+
     private int findSurfaceY(ChunkAccess chunk, int localX, int localZ, int minY, int maxY,
                               BlockPos.MutableBlockPos pos) {
-        for (int y = maxY; y >= minY; y--) {
+        // OCEAN_FLOOR_WG is primed before buildSurface; starting there skips
+        // scanning up to ~900 blocks of sky per column. +1 guards either
+        // heightmap convention (highest-solid vs first-free).
+        int scanTop = Math.min(maxY, chunk.getHeight(Heightmap.Types.OCEAN_FLOOR_WG, localX, localZ) + 1);
+        for (int y = scanTop; y >= minY; y--) {
             pos.set(localX, y, localZ);
             BlockState state = chunk.getBlockState(pos);
             if (state.is(Blocks.STONE) || state.is(Blocks.DEEPSLATE)) {
@@ -147,50 +174,63 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
         final int snowLine = config.snowLineBase();
         final int minY = chunk.getMinY();
 
+        // Biome at the ACTUAL surface. Biome selection is altitude-driven, so
+        // the old fixed-Y query (seaLevel+10) returned lowland-band biomes for
+        // every column — mountains over hot climate cells got desert-sand
+        // summits, and the SNOW_PEAKS branch below was unreachable dead code.
+        Holder<Biome> biome = chunk.getNoiseBiome(worldX >> 2, surfaceY >> 2, worldZ >> 2);
+        boolean cold = biome.is(GrandterrainBiomes.TUNDRA) || biome.is(GrandterrainBiomes.SNOW_PEAKS);
+
         if (surfaceY < seaLevel - 5) {
             applyOceanFloor(chunk, localX, localZ, surfaceY, minY, pos);
             return;
         }
-        if (surfaceY < seaLevel + 3) {
-            applyBeach(chunk, localX, localZ, surfaceY, minY, pos);
+        // Beach band with hash-jittered upper edge so the sand/grass boundary
+        // isn't a dead-flat worldwide contour line.
+        if (surfaceY < seaLevel + 1 + (hash2(worldX, worldZ) & 3)) {
+            applyBeach(chunk, localX, localZ, surfaceY, minY, cold, pos);
             return;
         }
 
-        int biomeQueryY = config.seaLevel() + 10;
-        Holder<Biome> biome = chunk.getNoiseBiome(worldX >> 2, biomeQueryY >> 2, worldZ >> 2);
+        // Hard snow cap above the line, regardless of biome — no biome paint
+        // may produce green (or sand) summits above the snow line.
+        if (surfaceY > snowLine) {
+            applySnowPeaks(chunk, localX, localZ, surfaceY, minY, pos);
+            return;
+        }
+        // Ramped transition: snow probability rises linearly over the last 40
+        // blocks below the line; non-snow columns fall through to biome paint.
+        if (surfaceY > snowLine - 40) {
+            float p = (surfaceY - (snowLine - 40)) / 40.0f;
+            if (((hash2(worldX, worldZ) >>> 16 & 255) / 255.0f) < p) {
+                applySnowPeaks(chunk, localX, localZ, surfaceY, minY, pos);
+                return;
+            }
+        }
 
         if (biome.is(GrandterrainBiomes.DESERT)) {
             applyDesertSurface(chunk, localX, localZ, surfaceY, minY, pos);
-            return;
-        }
-        if (biome.is(GrandterrainBiomes.SWAMP)) {
+        } else if (biome.is(GrandterrainBiomes.SWAMP)) {
             applySwampSurface(chunk, localX, localZ, surfaceY, minY, worldX, worldZ, pos);
-            return;
-        }
-        if (biome.is(GrandterrainBiomes.TUNDRA)) {
+        } else if (biome.is(GrandterrainBiomes.TUNDRA)) {
             applyTundraSurface(chunk, localX, localZ, surfaceY, minY, worldX, worldZ, pos);
-            return;
-        }
-        if (biome.is(GrandterrainBiomes.SAVANNA)) {
+        } else if (biome.is(GrandterrainBiomes.SAVANNA)) {
             applySavannaSurface(chunk, localX, localZ, surfaceY, minY, worldX, worldZ, pos);
-            return;
-        }
-        if (biome.is(GrandterrainBiomes.DARK_FOREST)) {
+        } else if (biome.is(GrandterrainBiomes.DARK_FOREST)) {
             applyDarkForestSurface(chunk, localX, localZ, surfaceY, minY, worldX, worldZ, pos);
-            return;
-        }
-        if (biome.is(GrandterrainBiomes.SNOW_PEAKS)) {
+        } else if (biome.is(GrandterrainBiomes.VOLCANIC_REGION)) {
+            applyVolcanicSurface(chunk, localX, localZ, surfaceY, minY, worldX, worldZ, pos);
+        } else if (biome.is(GrandterrainBiomes.SNOW_PEAKS)) {
             applySnowPeaks(chunk, localX, localZ, surfaceY, minY, pos);
-            return;
-        }
-
-        if (surfaceY > snowLine) {
-            applySnowPeaks(chunk, localX, localZ, surfaceY, minY, pos);
-        } else if (surfaceY > snowLine - 80) {
-            applySnowTransition(chunk, localX, localZ, surfaceY, minY, snowLine, worldX, worldZ, pos);
-        } else if (surfaceY > snowLine - 160) {
+        } else if (biome.is(GrandterrainBiomes.ROCKY_HIGHLANDS)
+                || biome.is(GrandterrainBiomes.COASTAL_CLIFFS)) {
             applyRockyHighlands(chunk, localX, localZ, surfaceY, minY, worldX, worldZ, pos);
+        } else if (biome.is(GrandterrainBiomes.MOUNTAIN_PINE_FOREST)) {
+            // Grass/podzol (not bare stone) so the biome's spruce features
+            // have valid ground to grow on.
+            applyPineForestSurface(chunk, localX, localZ, surfaceY, minY, worldX, worldZ, pos);
         } else {
+            // alpine_meadow, deep_valley, temperate/birch forest, lowland_plains
             applyGrassland(chunk, localX, localZ, surfaceY, minY, pos);
         }
     }
@@ -205,11 +245,17 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
     }
 
     private void applyBeach(ChunkAccess chunk, int localX, int localZ,
-                             int surfaceY, int minY, BlockPos.MutableBlockPos pos) {
+                             int surfaceY, int minY, boolean cold, BlockPos.MutableBlockPos pos) {
         for (int depth = 0; depth < 4 && surfaceY - depth >= minY; depth++) {
             pos.set(localX, surfaceY - depth, localZ);
-            chunk.setBlockState(pos, depth < 2 ? Blocks.SAND.defaultBlockState() :
-                    Blocks.SANDSTONE.defaultBlockState(), 0);
+            BlockState state;
+            if (depth < 2) {
+                // Cold-climate shores are gravel, not tropical sand.
+                state = cold ? Blocks.GRAVEL.defaultBlockState() : Blocks.SAND.defaultBlockState();
+            } else {
+                state = cold ? Blocks.STONE.defaultBlockState() : Blocks.SANDSTONE.defaultBlockState();
+            }
+            chunk.setBlockState(pos, state, 0);
         }
     }
 
@@ -219,23 +265,37 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
         chunk.setBlockState(pos, Blocks.SNOW_BLOCK.defaultBlockState(), 0);
         if (surfaceY + 1 <= minY + chunk.getHeight() - 1) {
             pos.set(localX, surfaceY + 1, localZ);
-            chunk.setBlockState(pos, Blocks.SNOW.defaultBlockState(), 0);
+            // Air-guard: river carving may have put water directly above the
+            // scanned surface; a snow layer under flowing water is a glitch.
+            if (chunk.getBlockState(pos).isAir()) {
+                chunk.setBlockState(pos, Blocks.SNOW.defaultBlockState(), 0);
+            }
         }
     }
 
-    private void applySnowTransition(ChunkAccess chunk, int localX, int localZ,
-                                      int surfaceY, int minY, int snowLine,
-                                      int worldX, int worldZ, BlockPos.MutableBlockPos pos) {
+    private void applyPineForestSurface(ChunkAccess chunk, int localX, int localZ,
+                                         int surfaceY, int minY,
+                                         int worldX, int worldZ, BlockPos.MutableBlockPos pos) {
         pos.set(localX, surfaceY, localZ);
-        boolean isSnow = ((worldX * 31 + worldZ * 17) & 3) == 0;
-        if (isSnow && surfaceY > snowLine - 40) {
-            chunk.setBlockState(pos, Blocks.SNOW_BLOCK.defaultBlockState(), 0);
-        } else {
-            chunk.setBlockState(pos, Blocks.GRASS_BLOCK.defaultBlockState(), 0);
-            for (int depth = 1; depth < 4 && surfaceY - depth >= minY; depth++) {
-                pos.set(localX, surfaceY - depth, localZ);
-                chunk.setBlockState(pos, Blocks.DIRT.defaultBlockState(), 0);
-            }
+        boolean isPodzol = (hash2(worldX, worldZ) >>> 14 & 3) == 0;
+        chunk.setBlockState(pos, isPodzol ? Blocks.PODZOL.defaultBlockState() :
+                Blocks.GRASS_BLOCK.defaultBlockState(), 0);
+        for (int depth = 1; depth < 3 && surfaceY - depth >= minY; depth++) {
+            pos.set(localX, surfaceY - depth, localZ);
+            chunk.setBlockState(pos, Blocks.DIRT.defaultBlockState(), 0);
+        }
+    }
+
+    private void applyVolcanicSurface(ChunkAccess chunk, int localX, int localZ,
+                                       int surfaceY, int minY,
+                                       int worldX, int worldZ, BlockPos.MutableBlockPos pos) {
+        pos.set(localX, surfaceY, localZ);
+        boolean vent = (hash2(worldX, worldZ) >>> 5 & 7) == 0;
+        chunk.setBlockState(pos, vent ? Blocks.BASALT.defaultBlockState() :
+                Blocks.BLACKSTONE.defaultBlockState(), 0);
+        for (int depth = 1; depth < 3 && surfaceY - depth >= minY; depth++) {
+            pos.set(localX, surfaceY - depth, localZ);
+            chunk.setBlockState(pos, Blocks.TUFF.defaultBlockState(), 0);
         }
     }
 
@@ -243,7 +303,7 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
                                       int surfaceY, int minY,
                                       int worldX, int worldZ, BlockPos.MutableBlockPos pos) {
         pos.set(localX, surfaceY, localZ);
-        boolean isGravel = ((worldX * 13 + worldZ * 7) & 7) == 0;
+        boolean isGravel = (hash2(worldX, worldZ) >>> 10 & 7) == 0;
         if (isGravel) {
             chunk.setBlockState(pos, Blocks.GRAVEL.defaultBlockState(), 0);
         }
@@ -275,7 +335,7 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
         chunk.setBlockState(pos, Blocks.GRASS_BLOCK.defaultBlockState(), 0);
         for (int depth = 1; depth < 4 && surfaceY - depth >= minY; depth++) {
             pos.set(localX, surfaceY - depth, localZ);
-            boolean isClay = ((worldX * 11 + worldZ * 23) & 7) == 0;
+            boolean isClay = (hash2(worldX, worldZ) >>> 8 & 7) == 0;
             chunk.setBlockState(pos, isClay ? Blocks.CLAY.defaultBlockState() :
                     Blocks.DIRT.defaultBlockState(), 0);
         }
@@ -285,15 +345,17 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
                                      int surfaceY, int minY,
                                      int worldX, int worldZ, BlockPos.MutableBlockPos pos) {
         pos.set(localX, surfaceY, localZ);
-        boolean isSnow = ((worldX * 31 + worldZ * 17) & 3) < 2;
+        boolean isSnow = (hash2(worldX, worldZ) & 3) < 2;
         if (isSnow) {
             chunk.setBlockState(pos, Blocks.SNOW_BLOCK.defaultBlockState(), 0);
             if (surfaceY + 1 <= minY + chunk.getHeight() - 1) {
                 pos.set(localX, surfaceY + 1, localZ);
-                chunk.setBlockState(pos, Blocks.SNOW.defaultBlockState(), 0);
+                if (chunk.getBlockState(pos).isAir()) {
+                    chunk.setBlockState(pos, Blocks.SNOW.defaultBlockState(), 0);
+                }
             }
         } else {
-            boolean isPodzol = ((worldX * 7 + worldZ * 19) & 3) == 0;
+            boolean isPodzol = (hash2(worldX, worldZ) >>> 2 & 3) == 0;
             chunk.setBlockState(pos, isPodzol ? Blocks.PODZOL.defaultBlockState() :
                     Blocks.COARSE_DIRT.defaultBlockState(), 0);
         }
@@ -307,7 +369,7 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
                                       int surfaceY, int minY,
                                       int worldX, int worldZ, BlockPos.MutableBlockPos pos) {
         pos.set(localX, surfaceY, localZ);
-        boolean isCoarse = ((worldX * 13 + worldZ * 29) & 7) == 0;
+        boolean isCoarse = (hash2(worldX, worldZ) >>> 4 & 7) == 0;
         chunk.setBlockState(pos, isCoarse ? Blocks.COARSE_DIRT.defaultBlockState() :
                 Blocks.GRASS_BLOCK.defaultBlockState(), 0);
         for (int depth = 1; depth < 4 && surfaceY - depth >= minY; depth++) {
@@ -320,7 +382,7 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
                                          int surfaceY, int minY,
                                          int worldX, int worldZ, BlockPos.MutableBlockPos pos) {
         pos.set(localX, surfaceY, localZ);
-        boolean isPodzol = ((worldX * 17 + worldZ * 31) & 7) < 2;
+        boolean isPodzol = (hash2(worldX, worldZ) >>> 6 & 7) < 2;
         chunk.setBlockState(pos, isPodzol ? Blocks.PODZOL.defaultBlockState() :
                 Blocks.GRASS_BLOCK.defaultBlockState(), 0);
         for (int depth = 1; depth < 4 && surfaceY - depth >= minY; depth++) {
@@ -361,9 +423,12 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
                 int worldX = chunkX + sx * INTERP_H;
                 int worldZ = chunkZ + sz * INTERP_H;
                 double[] column = densityGrid[sx][sz];
+                // Surface height is Y-independent: compute once per column
+                // instead of once per sample (measured 20x on this phase).
+                double surfaceH = r.getTerrainDensity().computeSurfaceHeight(worldX, worldZ);
                 for (int sy = 0; sy < samplesY; sy++) {
                     int worldY = minY + sy * INTERP_V;
-                    column[sy] = r.getTerrainDensity().compute(worldX, worldY, worldZ);
+                    column[sy] = r.getTerrainDensity().computeDensityFromHeight(surfaceH, worldY);
                 }
             }
         }
@@ -451,7 +516,7 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
 
         if (y < deepslateTop) {
             double progress = (double) (y - minY) / DEEPSLATE_TRANSITION_THICKNESS;
-            int hash = (worldX * 31 + worldZ * 17 + y * 13) & 255;
+            int hash = hash3(worldX, y, worldZ) & 255;
             double threshold = progress * progress;
             if (hash < (int) (threshold * 255)) {
                 return Blocks.STONE.defaultBlockState();
@@ -515,7 +580,7 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
                 int bedY = surfaceY - carveDepth - 1;
                 if (bedY >= minY) {
                     pos.set(localX, bedY, localZ);
-                    boolean isClay = ((worldX * 7 + worldZ * 13) & 3) == 0;
+                    boolean isClay = (hash2(worldX, worldZ) >>> 12 & 3) == 0;
                     chunk.setBlockState(pos, isClay ? Blocks.CLAY.defaultBlockState() :
                             Blocks.GRAVEL.defaultBlockState(), 0);
                 }
