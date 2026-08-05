@@ -30,7 +30,7 @@ JARS = {
     ),
     Path(os.getenv("MOD_JAR_PATH", str(DATA_DIR / "grandterrain.jar"))): os.getenv(
         "MOD_JAR_URL",
-        "https://github.com/sworcery/GrandTerrain/releases/download/v0.1.8/grandterrain-0.1.8.jar",
+        "https://github.com/sworcery/GrandTerrain/releases/download/v0.1.9/grandterrain-0.1.9.jar",
     ),
 }
 
