@@ -49,6 +49,18 @@ public class RuinStructure extends Structure {
 
         if (y < 135 || y > 500) return Optional.empty();
 
+        // Slope gate: ruins have a ±12 footprint and no foundation, and were
+        // the only structure with no flatness check — on cliff faces their
+        // walls floated or buried completely.
+        var hm = Heightmap.Types.WORLD_SURFACE_WG;
+        int yN = context.chunkGenerator().getBaseHeight(x, z - 8, hm, context.heightAccessor(), context.randomState());
+        int yS = context.chunkGenerator().getBaseHeight(x, z + 8, hm, context.heightAccessor(), context.randomState());
+        int yE = context.chunkGenerator().getBaseHeight(x + 8, z, hm, context.heightAccessor(), context.randomState());
+        int yW = context.chunkGenerator().getBaseHeight(x - 8, z, hm, context.heightAccessor(), context.randomState());
+        int maxDelta = Math.max(Math.max(Math.abs(y - yN), Math.abs(y - yS)),
+                Math.max(Math.abs(y - yE), Math.abs(y - yW)));
+        if (maxDelta > 4) return Optional.empty();
+
         BlockPos pos = new BlockPos(x, y, z);
         int variant = context.random().nextInt(4);
         int ruinHeight = switch (variant) {

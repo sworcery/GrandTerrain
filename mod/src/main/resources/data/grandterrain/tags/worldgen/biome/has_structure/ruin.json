@@ -11,6 +11,7 @@
     "grandterrain:savanna",
     "grandterrain:tundra",
     "grandterrain:birch_forest",
-    "grandterrain:dark_forest"
+    "grandterrain:dark_forest",
+    "grandterrain:snow_peaks"
   ]
 }

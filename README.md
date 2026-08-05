@@ -68,6 +68,7 @@ Key environment knobs (see `worker/.env.example` for the full list):
 
 | Variable | Default | Meaning |
 |---|---|---|
+| `SERVER_MEMORY` | `6G` | Max heap for the generation server — 1024-tall chunks are memory-hungry; too low OOMs mid-pre-gen |
 | `PREGEN_RADIUS` | `2000` | Pre-generation radius in blocks (2000 → a 4000×4000 area); `0` disables |
 | `PREGEN_TIMEOUT` | `21600` | Hard cap in seconds; partial pre-gen still ships |
 | `MAX_CONCURRENT_JOBS` | `1` | Generation jobs allowed at once |

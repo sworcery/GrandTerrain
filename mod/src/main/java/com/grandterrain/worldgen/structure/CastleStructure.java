@@ -54,13 +54,17 @@ public class CastleStructure extends Structure {
 
         if (y < 135 || y > 350) return Optional.empty();
 
-        int yN = context.chunkGenerator().getBaseHeight(x, z - 20, hm, context.heightAccessor(), context.randomState());
-        int yS = context.chunkGenerator().getBaseHeight(x, z + 20, hm, context.heightAccessor(), context.randomState());
-        int yE = context.chunkGenerator().getBaseHeight(x + 20, z, hm, context.heightAccessor(), context.randomState());
-        int yW = context.chunkGenerator().getBaseHeight(x - 20, z, hm, context.heightAccessor(), context.randomState());
-        int maxDelta = Math.max(Math.max(Math.abs(y - yN), Math.abs(y - yS)),
-                Math.max(Math.abs(y - yE), Math.abs(y - yW)));
-        if (maxDelta > 10) return Optional.empty();
+        // Flatness gate over the ACTUAL wall ring (8 points at the wall
+        // radius, including diagonals). The old 4 axis samples at ±20 missed
+        // diagonal terrain: accepted sites measured wall-ring deltas up to 37.
+        final int w = CastlePiece.WALL_HALF;
+        int[][] ring = {{0, -w}, {0, w}, {w, 0}, {-w, 0},
+                        {-w, -w}, {-w, w}, {w, -w}, {w, w}};
+        for (int[] o : ring) {
+            int h = context.chunkGenerator().getBaseHeight(x + o[0], z + o[1], hm,
+                    context.heightAccessor(), context.randomState());
+            if (Math.abs(y - h) > 10) return Optional.empty();
+        }
 
         BlockPos pos = new BlockPos(x, y, z);
         int totalHeight = 120 + context.random().nextInt(81);
@@ -128,6 +132,31 @@ public class CastleStructure extends Structure {
                 for (int dz = -(WALL_HALF + 1); dz <= WALL_HALF + 1; dz++) {
                     for (int dy = -3; dy <= 0; dy++) {
                         setBlock(level, deepslate, cx + dx, y + dy, cz + dz, bb);
+                    }
+                }
+            }
+            // Anchor the wall ring to real ground. terrain_adaptation
+            // ("beard_thin") is inert with a custom ChunkGenerator — the
+            // Beardifier only runs in NoiseBasedChunkGenerator — and measured
+            // wall-ring height deltas reach 37 blocks on accepted sites.
+            int r = WALL_HALF + 1;
+            for (int i = -r; i <= r; i++) {
+                GrandterrainStructurePieces.anchorColumn(level, deepslate, cx + i, y - 4, cz - r, bb);
+                GrandterrainStructurePieces.anchorColumn(level, deepslate, cx + i, y - 4, cz + r, bb);
+                GrandterrainStructurePieces.anchorColumn(level, deepslate, cx - r, y - 4, cz + i, bb);
+                GrandterrainStructurePieces.anchorColumn(level, deepslate, cx + r, y - 4, cz + i, bb);
+            }
+            // Corner towers (halfW 3 at ±WALL_HALF) overhang the slab/ring by
+            // up to 3 blocks diagonally; anchor their footprint edges too.
+            for (int sx = -1; sx <= 1; sx += 2) {
+                for (int sz = -1; sz <= 1; sz += 2) {
+                    int tx = cx + sx * WALL_HALF;
+                    int tz = cz + sz * WALL_HALF;
+                    for (int i = -3; i <= 3; i++) {
+                        GrandterrainStructurePieces.anchorColumn(level, deepslate, tx + i, y - 4, tz - 3, bb);
+                        GrandterrainStructurePieces.anchorColumn(level, deepslate, tx + i, y - 4, tz + 3, bb);
+                        GrandterrainStructurePieces.anchorColumn(level, deepslate, tx - 3, y - 4, tz + i, bb);
+                        GrandterrainStructurePieces.anchorColumn(level, deepslate, tx + 3, y - 4, tz + i, bb);
                     }
                 }
             }
@@ -427,8 +456,9 @@ public class CastleStructure extends Structure {
                          cx + dx, y + 3, cz + 2, bb);
             }
 
-            // Spawner in basement (below keep)
-            placeSpawner(level, random, cx, y - 1, cz, bb);
+            // Spawner on the keep's ground floor. y-1 was inside the solid
+            // foundation slab — entombed, unreachable, and unable to spawn.
+            placeSpawner(level, random, cx, y + 1, cz, bb);
         }
 
         private void placeChest(WorldGenLevel level, int x, int y, int z, BoundingBox bb) {

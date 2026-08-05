@@ -127,6 +127,10 @@ public class WatchtowerStructure extends Structure {
                     for (int dy = -2; dy <= 0; dy++) {
                         setBlock(level, deepslate, cx + dx, y + dy, cz + dz, bb);
                     }
+                    // Anchor to real ground (terrain_adaptation is inert with
+                    // a custom generator; fixed 2-deep bases float on slopes).
+                    GrandterrainStructurePieces.anchorColumn(level, deepslate,
+                            cx + dx, y - 3, cz + dz, bb);
                 }
             }
         }

@@ -62,12 +62,18 @@ public class DungeonStructure extends Structure {
         if (y > surfaceY - 15) return Optional.empty();
 
         int layoutSeed = context.random().nextInt();
-        BlockPos pos = new BlockPos(x, y, z);
+        BlockPos piecePos = new BlockPos(x, y, z);
+        // The stub position is what vanilla biome-checks — and our biome
+        // source is altitude-keyed, so a stub at dungeon depth (y ~58-97)
+        // lands in the deep_ocean/coastal_cliffs altitude bands and gets
+        // rejected for ~69% of otherwise-valid dungeons (measured). Check
+        // the biome at the SURFACE; the piece carries the real depth.
+        BlockPos stub = new BlockPos(x, surfaceY, z);
 
         final int fNumFloors = numFloors;
         final int fLayoutSeed = layoutSeed;
-        return Optional.of(new GenerationStub(pos, builder -> {
-            builder.addPiece(new DungeonPiece(pos, fNumFloors, fLayoutSeed));
+        return Optional.of(new GenerationStub(stub, builder -> {
+            builder.addPiece(new DungeonPiece(piecePos, fNumFloors, fLayoutSeed));
         }));
     }
 
@@ -116,13 +122,14 @@ public class DungeonStructure extends Structure {
             int cx = (boundingBox.minX() + boundingBox.maxX()) / 2;
             int cz = (boundingBox.minZ() + boundingBox.maxZ()) / 2;
 
+            // Two passes: rooms first, then shafts. Interleaving let the next
+            // floor's ceiling write re-seal the shaft just carved above it,
+            // making every lower floor unreachable.
             for (int floor = 0; floor < numFloors; floor++) {
-                int fy = baseY - floor * FLOOR_SPACING;
-                generateFloor(level, random, cx, fy, cz, floor, chunkBB);
-
-                if (floor < numFloors - 1) {
-                    buildLadderShaft(level, cx + 3, fy, cz + 3, chunkBB);
-                }
+                generateFloor(level, random, cx, baseY - floor * FLOOR_SPACING, cz, floor, chunkBB);
+            }
+            for (int floor = 0; floor < numFloors - 1; floor++) {
+                buildLadderShaft(level, cx + 3, baseY - floor * FLOOR_SPACING, cz + 3, chunkBB);
             }
         }
 

@@ -29,9 +29,16 @@ CHUNKY_JAR = Path(os.getenv("CHUNKY_JAR_PATH", str(DATA_DIR / "chunky.jar")))
 PREGEN_RADIUS = int(os.getenv("PREGEN_RADIUS", "2000"))
 PREGEN_TIMEOUT = int(os.getenv("PREGEN_TIMEOUT", "21600"))
 
+# Max heap for the generation server. 1024-tall chunks hold ~2.7x the block
+# data of vanilla, and Chunky keeps many of them in flight: a 9.4k-chunk
+# pre-gen reproducibly OOM'd at 2G during chunk save (PalettedContainer.pack),
+# which killed the run at 99% and truncated the region files. 6G is sized for
+# the default 2000-block radius; lower it only for small radii.
+SERVER_MEMORY = os.getenv("SERVER_MEMORY", "6G")
+
 # In-flight server processes, tracked so app shutdown can kill them. A cancelled
 # background task raises CancelledError (a BaseException), which `except Exception`
-# handlers miss — without this, shutdown mid-generation orphans a 2G JVM.
+# handlers miss — without this, shutdown mid-generation orphans the JVM.
 live_procs: set = set()
 
 SERVER_PROPERTIES = """\
@@ -182,7 +189,7 @@ async def generate_world(job_id: str, config: WorldConfig) -> Path | None:
     if server_jar.exists():
         logger.info("Starting Fabric server for job %s", job_id)
         proc = await asyncio.create_subprocess_exec(
-            "java", "-Xmx2G", "-jar", "fabric-server-launch.jar", "--nogui",
+            "java", f"-Xmx{SERVER_MEMORY}", "-jar", "fabric-server-launch.jar", "--nogui",
             cwd=str(instance_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
@@ -192,9 +199,20 @@ async def generate_world(job_id: str, config: WorldConfig) -> Path | None:
 
         log_path = JOBS_DIR / job_id / "server.log"
         server_ready = False
+        # An OOM during chunk save truncates region files, but the pre-gen
+        # task has usually already reported "Task finished" — so the job would
+        # otherwise be packaged and served as a silently corrupt world.
+        fatal = False
 
         try:
             with open(log_path, "w") as log_file:
+                def record(decoded: str) -> None:
+                    nonlocal fatal
+                    log_file.write(decoded + "\n")
+                    log_file.flush()
+                    if "OutOfMemoryError" in decoded:
+                        fatal = True
+
                 async def read_until(predicate):
                     """Consume stdout into the log until predicate matches.
 
@@ -205,8 +223,7 @@ async def generate_world(job_id: str, config: WorldConfig) -> Path | None:
                         if not line:
                             return False
                         decoded = line.decode("utf-8", errors="replace").rstrip()
-                        log_file.write(decoded + "\n")
-                        log_file.flush()
+                        record(decoded)
                         logger.debug("[mc] %s", decoded)
                         if predicate(decoded):
                             return True
@@ -252,12 +269,13 @@ async def generate_world(job_id: str, config: WorldConfig) -> Path | None:
                     async def drain_rest():
                         # Keep consuming stdout through the settle/stop window:
                         # a chatty server can fill the 64K pipe buffer and
-                        # block right when we send "stop".
+                        # block right when we send "stop". Chunk-save OOMs
+                        # surface here, after "Task finished".
                         while True:
                             rest = await proc.stdout.readline()
                             if not rest:
                                 return
-                            log_file.write(rest.decode("utf-8", errors="replace"))
+                            record(rest.decode("utf-8", errors="replace").rstrip())
 
                     # Must start before any settle sleep — during pre-gen the
                     # read_until loop was the drainer, but the settle path has
@@ -315,6 +333,16 @@ async def generate_world(job_id: str, config: WorldConfig) -> Path | None:
                 except (asyncio.TimeoutError, asyncio.CancelledError):
                     pass
             live_procs.discard(proc)
+
+        if fatal:
+            # Region files written during an OOM are truncated; shipping them
+            # would hand the user a silently corrupt world.
+            logger.error(
+                "Server ran out of memory for job %s — raise SERVER_MEMORY (currently %s) "
+                "or lower PREGEN_RADIUS (currently %d)",
+                job_id, SERVER_MEMORY, PREGEN_RADIUS,
+            )
+            success = False
     else:
         logger.warning(
             "No server jar found at %s — cannot generate for job %s",
