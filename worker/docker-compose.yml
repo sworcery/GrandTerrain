@@ -16,8 +16,18 @@ services:
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
       - MAX_CONCURRENT_JOBS=${MAX_CONCURRENT_JOBS:-1}
       - JOB_RETENTION_HOURS=${JOB_RETENTION_HOURS:-24}
+      - MIN_FREE_DISK_GB=${MIN_FREE_DISK_GB:-5}
       - CHUNKY_JAR_PATH=/app/data/chunky.jar
       - SERVER_MEMORY=${SERVER_MEMORY:-6G}
       - PREGEN_RADIUS=${PREGEN_RADIUS:-2000}
       - PREGEN_TIMEOUT=${PREGEN_TIMEOUT:-21600}
+    healthcheck:
+      # /health reports "degraded" (still HTTP 200) when jars are missing;
+      # the check only asserts the API is up. start_period is generous
+      # because first boot downloads ~100 MB of jars before uvicorn starts.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 600s
     restart: unless-stopped

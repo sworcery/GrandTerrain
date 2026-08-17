@@ -64,6 +64,21 @@ GrandTerrain mod jar) into the mounted `data/` volume. Each generation job
 boots a headless Fabric server, pre-generates a square region around spawn
 with Chunky, and packages the world into a downloadable zip.
 
+**First boot.** The jar downloads happen before the API starts, so the port
+is silent for a minute or two the first time (each download retries three
+times with backoff). If a download ultimately fails the API still comes up,
+but `POST /api/generate` answers `503 Worker not provisioned: <jar> missing`
+until the jar exists — check `docker compose logs worker`, fix the network
+or override the `*_JAR_URL`, and restart. Nothing is re-downloaded once the
+jar is in `data/`.
+
+**Health.** `GET /health` returns `{"status": "ok"|"degraded", "jars": {...},
+"active_jobs": n}`; `degraded` means the mod or server jar is missing. The
+compose file wires this into a Docker healthcheck (600s start period to
+cover first-boot downloads). `GET /` is a small landing JSON pointing at
+`/docs` and `/health`. Failed jobs carry a short `error` string in
+`GET /api/jobs/{id}` (e.g. out-of-memory, missing jar, packaging failure).
+
 Key environment knobs (see `worker/.env.example` for the full list):
 
 | Variable | Default | Meaning |
@@ -72,7 +87,8 @@ Key environment knobs (see `worker/.env.example` for the full list):
 | `PREGEN_RADIUS` | `2000` | Pre-generation radius in blocks (2000 → a 4000×4000 area); `0` disables |
 | `PREGEN_TIMEOUT` | `21600` | Hard cap in seconds; partial pre-gen still ships |
 | `MAX_CONCURRENT_JOBS` | `1` | Generation jobs allowed at once |
-| `JOB_RETENTION_HOURS` | `24` | Age after which job dirs and world zips are deleted |
+| `JOB_RETENTION_HOURS` | `24` | Age after which job dirs and world zips are deleted (in-flight jobs are never swept) |
+| `MIN_FREE_DISK_GB` | `5` | New jobs are refused with `503 Insufficient disk` below this much free space on the data volume |
 
 Rough sizing from a measured run (~17 chunks/sec on modest hardware): the
 default 2000-block radius is ~63k chunks — about an hour and a ~450 MB zip.

@@ -2,13 +2,22 @@ import asyncio
 import logging
 import os
 import re
+import shutil
 from contextlib import asynccontextmanager
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from .generator import WORLDS_DIR, generate_world
+from .generator import (
+    CHUNKY_JAR,
+    DATA_DIR,
+    FABRIC_API_JAR,
+    MOD_JAR,
+    SERVER_JAR,
+    WORLDS_DIR,
+    generate_world,
+)
 from .jobs import create_job, get_job
 from .models import GenerateRequest, JobResponse
 
@@ -19,6 +28,9 @@ logging.basicConfig(
 
 ALLOWED_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
 MAX_CONCURRENT_JOBS = int(os.getenv("MAX_CONCURRENT_JOBS", "1"))
+# Refuse new jobs below this much free space: a world zip is hundreds of MB
+# and the server instance more, and a full disk takes the whole service down.
+MIN_FREE_DISK_GB = float(os.getenv("MIN_FREE_DISK_GB", "5"))
 
 _JOB_ID_RE = re.compile(r"^[0-9a-f]{12}$")
 _active_jobs = 0
@@ -60,6 +72,33 @@ def _valid_job_id(job_id: str) -> bool:
     return bool(_JOB_ID_RE.match(job_id))
 
 
+def _jar_status() -> dict[str, bool]:
+    return {
+        "grandterrain": MOD_JAR.exists(),
+        "fabric_api": FABRIC_API_JAR.exists(),
+        "server": SERVER_JAR.exists(),
+        "chunky": CHUNKY_JAR.exists(),
+    }
+
+
+@app.get("/")
+async def root():
+    return {"service": "GrandTerrain worker", "docs": "/docs", "health": "/health"}
+
+
+@app.get("/health")
+async def health():
+    jars = _jar_status()
+    # The mod and server jars are the hard requirements; missing Fabric API
+    # or Chunky degrades output but generation still runs.
+    ok = jars["grandterrain"] and jars["server"]
+    return {
+        "status": "ok" if ok else "degraded",
+        "jars": jars,
+        "active_jobs": _active_jobs,
+    }
+
+
 @app.post("/api/generate", response_model=JobResponse)
 async def generate(req: GenerateRequest, bg: BackgroundTasks):
     # _active_jobs is in-memory: correct only with a single uvicorn worker
@@ -68,6 +107,21 @@ async def generate(req: GenerateRequest, bg: BackgroundTasks):
     global _active_jobs
     if _active_jobs >= MAX_CONCURRENT_JOBS:
         raise HTTPException(429, "Server is busy generating another world. Try again shortly.")
+    # Fail fast with a real reason instead of creating a job that dies in
+    # the background: bootstrap starts the API even if a download failed.
+    for name, jar in (("grandterrain.jar", MOD_JAR), ("fabric-server-launch.jar", SERVER_JAR)):
+        if not jar.exists():
+            raise HTTPException(
+                503,
+                f"Worker not provisioned: {name} missing — check container logs "
+                "(bootstrap download failed?)",
+            )
+    free_gb = shutil.disk_usage(DATA_DIR).free / 1e9
+    if free_gb < MIN_FREE_DISK_GB:
+        raise HTTPException(
+            503,
+            f"Insufficient disk: {free_gb:.1f} GB free, need at least {MIN_FREE_DISK_GB:g} GB",
+        )
     from .generator import sweep_old_jobs
     # Off the event loop: deleting an expired multi-hundred-MB zip inline
     # would stall every concurrent status poll.

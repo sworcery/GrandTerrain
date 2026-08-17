@@ -1,18 +1,11 @@
+# Pinned JRE image instead of a "latest" Adoptium API download: the API URL
+# resolves to whatever build is current, so two builds a week apart could
+# ship different Java runtimes (or fail outright when the endpoint is down).
+FROM eclipse-temurin:25-jre AS java
+
 FROM python:3.13-slim
 
-ARG JAVA_VERSION=25
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends wget ca-certificates && \
-    mkdir -p /opt/java && \
-    wget -qO /tmp/jdk.tar.gz \
-      "https://api.adoptium.net/v3/binary/latest/${JAVA_VERSION}/ga/linux/x64/jre/hotspot/normal/eclipse?project=jdk" && \
-    tar -xzf /tmp/jdk.tar.gz -C /opt/java --strip-components=1 && \
-    rm /tmp/jdk.tar.gz && \
-    apt-get purge -y wget && \
-    apt-get autoremove -y && \
-    rm -rf /var/lib/apt/lists/*
-
+COPY --from=java /opt/java/openjdk /opt/java
 ENV JAVA_HOME=/opt/java
 ENV PATH="${JAVA_HOME}/bin:${PATH}"
 
