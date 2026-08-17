@@ -1,10 +1,12 @@
 # Full self-hosted stack: web configurator + generation worker.
 #
-#   NEXT_PUBLIC_WORKER_URL=http://<this-host>:8080 docker compose up --build
+#   docker compose up --build
 #
-# NEXT_PUBLIC_WORKER_URL must be the worker address reachable from the
-# BROWSER (it is baked into the web bundle at build time). For a LAN host,
-# use the host's LAN IP, not localhost.
+# The browser talks only to the web app (port 3000); the web app proxies
+# /worker/* to the worker over the compose network via WORKER_URL. No LAN IP
+# or rebuild needed, and it works unchanged behind an HTTPS reverse proxy.
+# NEXT_PUBLIC_WORKER_URL is an optional build-time override that makes the
+# browser call the worker directly instead (cross-origin; needs CORS_ORIGINS).
 services:
   # NOTE: keep this env block in sync with worker/docker-compose.yml (the
   # standalone worker deployment) — same variables, same defaults.
@@ -33,7 +35,9 @@ services:
     build:
       context: ./web
       args:
-        - NEXT_PUBLIC_WORKER_URL=${NEXT_PUBLIC_WORKER_URL:-http://localhost:8080}
+        - NEXT_PUBLIC_WORKER_URL=${NEXT_PUBLIC_WORKER_URL:-}
+    environment:
+      - WORKER_URL=http://worker:8080
     ports:
       - "3000:3000"
     depends_on:

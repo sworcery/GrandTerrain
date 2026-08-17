@@ -1,12 +1,18 @@
 import type { WorldConfig } from "./config-schema";
 
-const WORKER_URL =
-  process.env.NEXT_PUBLIC_WORKER_URL ?? "http://localhost:8080";
+// Same-origin by default: /worker/* is proxied to the worker by
+// app/worker/[...path]/route.ts using the server-side WORKER_URL env var.
+// NEXT_PUBLIC_WORKER_URL remains an optional build-time override for calling
+// the worker directly (cross-origin; requires the worker's CORS to allow it).
+// `||` not `??`: the Dockerfile's optional ARG inlines an empty string when unset.
+const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL || "/worker";
 
 export interface JobResponse {
   jobId: string;
   status: "pending" | "generating" | "ready" | "failed";
   createdAt: string;
+  /** Present on failed jobs when the worker can explain why. */
+  error?: string;
 }
 
 /**
