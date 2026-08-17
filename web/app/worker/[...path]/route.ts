@@ -17,16 +17,20 @@ function workerUrl(): string {
   return (process.env.WORKER_URL ?? "http://localhost:8080").replace(/\/+$/, "");
 }
 
-// Hop-by-hop / transport headers that must not be forwarded verbatim. Node's
-// fetch transparently decompresses upstream bodies, so content-encoding and
-// content-length would describe a body we no longer send.
+// Hop-by-hop / transport headers that must not be forwarded verbatim.
 const STRIP_RESPONSE_HEADERS = new Set([
   "connection",
   "keep-alive",
   "transfer-encoding",
   "content-encoding",
-  "content-length",
 ]);
+// content-length is only wrong when Node's fetch transparently decompressed
+// the body — i.e. when upstream sent content-encoding. The worker never
+// compresses, so keeping it lets the browser show real download progress on
+// a multi-hundred-MB world instead of an unknown-size transfer.
+function keepsContentLength(upstream: Response): boolean {
+  return !upstream.headers.has("content-encoding");
+}
 const STRIP_REQUEST_HEADERS = new Set(["host", "connection", "content-length"]);
 
 async function proxy(req: NextRequest, path: string[]): Promise<Response> {
@@ -59,7 +63,10 @@ async function proxy(req: NextRequest, path: string[]): Promise<Response> {
 
   const responseHeaders = new Headers();
   upstream.headers.forEach((value, key) => {
-    if (!STRIP_RESPONSE_HEADERS.has(key.toLowerCase())) responseHeaders.set(key, value);
+    const k = key.toLowerCase();
+    if (STRIP_RESPONSE_HEADERS.has(k)) return;
+    if (k === "content-length" && !keepsContentLength(upstream)) return;
+    responseHeaders.set(key, value);
   });
 
   return new Response(upstream.body, {

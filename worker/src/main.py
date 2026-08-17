@@ -125,7 +125,11 @@ async def generate(req: GenerateRequest, bg: BackgroundTasks):
     from .generator import sweep_old_jobs
     # Off the event loop: deleting an expired multi-hundred-MB zip inline
     # would stall every concurrent status poll.
-    asyncio.get_running_loop().run_in_executor(None, sweep_old_jobs)
+    # Log failures instead of discarding the future silently.
+    _sweep = asyncio.get_running_loop().run_in_executor(None, sweep_old_jobs)
+    _sweep.add_done_callback(
+        lambda f: f.exception() and logging.getLogger("grandterrain").warning(
+            "retention sweep failed", exc_info=f.exception()))
     # create_job is fallible (disk); take the slot only after it succeeds,
     # otherwise a single failure leaks the slot and 429s everyone forever.
     job = create_job(req)
@@ -148,7 +152,10 @@ async def job_status(job_id: str):
     return job
 
 
-@app.get("/api/jobs/{job_id}/download")
+# GET *and* HEAD: the web UI HEAD-checks before navigating, and FastAPI's
+# APIRoute (unlike Starlette's Route) does not add HEAD alongside GET —
+# without this every download 405s and the UI reports the world as gone.
+@app.api_route("/api/jobs/{job_id}/download", methods=["GET", "HEAD"])
 async def download_world(job_id: str):
     if not _valid_job_id(job_id):
         raise HTTPException(404, "World file not found.")

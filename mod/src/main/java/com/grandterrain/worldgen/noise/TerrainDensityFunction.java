@@ -47,7 +47,7 @@ public class TerrainDensityFunction {
 
         // Slope attenuation cached per XZ column; passes through pre-computed continental
         // to avoid the 4 redundant continental+mountain evaluations inside the slope calc.
-        double slopeAttenuation = getCachedSlopeAttenuation(x, z);
+        double slopeAttenuation = computeSlopeAttenuation(x, z);
         double detailContribution = detail * 15.0 * slopeAttenuation;
 
         double baseTerrain = baseTerrainNoise.GetNoise(
@@ -93,7 +93,7 @@ public class TerrainDensityFunction {
         double valleyCarve = erosionNoise.sampleValley(x, z);
         double valleyDepth = valleyCarve * 80.0 * Math.max(0, 0.5 + erosionMacro);
         double detail = erosionNoise.sampleDetail(x, z);
-        double slopeAttenuation = getCachedSlopeAttenuation(x, z);
+        double slopeAttenuation = computeSlopeAttenuation(x, z);
         double detailContribution = detail * 15.0 * slopeAttenuation;
         double baseTerrain = baseTerrainNoise.GetNoise(
                 ContinentalNoise.wrapToFloat(x),
@@ -116,17 +116,6 @@ public class TerrainDensityFunction {
         double excess = h - start;
         double span = 100.0;
         return start + span * (excess / (excess + span));
-    }
-
-    /**
-     * Slope attenuation is evaluated once per (x,z) column by every current
-     * caller (the density grid computes surface height once per column; the
-     * bilinear getBaseHeight touches 4 distinct corners), so the previous
-     * one-entry ThreadLocal cache had a measured ~0% hit rate and only cost
-     * a ThreadLocal.get() plus two doubleToLongBits per call. Removed.
-     */
-    private double getCachedSlopeAttenuation(double x, double z) {
-        return computeSlopeAttenuation(x, z);
     }
 
     private double computeBaseHeight(double continental) {

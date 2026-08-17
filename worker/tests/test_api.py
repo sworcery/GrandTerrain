@@ -90,3 +90,20 @@ def test_job_status_exposes_error(client):
     body = client.get("/api/jobs/feedfeedfeed").json()
     assert body["status"] == "failed"
     assert body["error"].startswith("Server ran out of memory")
+
+
+def test_download_supports_head(client):
+    """The web UI HEAD-checks the download before navigating. FastAPI's
+    APIRoute does not add HEAD alongside GET, so without an explicit
+    api_route every download 405s and the UI reports the world as gone."""
+    from src.generator import WORLDS_DIR
+
+    job_id = "abcdef123456"
+    WORLDS_DIR.mkdir(parents=True, exist_ok=True)
+    (WORLDS_DIR / f"{job_id}.zip").write_bytes(b"PK\x03\x04" + b"\0" * 512)
+    try:
+        head = client.head(f"/api/jobs/{job_id}/download")
+        assert head.status_code == 200, f"HEAD must be allowed, got {head.status_code}"
+        assert client.get(f"/api/jobs/{job_id}/download").status_code == 200
+    finally:
+        (WORLDS_DIR / f"{job_id}.zip").unlink(missing_ok=True)

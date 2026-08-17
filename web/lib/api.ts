@@ -47,7 +47,7 @@ export async function generateWorld(config: WorldConfig): Promise<JobResponse> {
 export async function getJobStatus(jobId: string): Promise<JobResponse | null> {
   const res = await fetch(`${WORKER_URL}/api/jobs/${jobId}`);
   if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`Job lookup failed: ${res.status}`);
+  if (!res.ok) throw await errorFrom(res, "Job lookup failed");
   return res.json();
 }
 

@@ -21,7 +21,6 @@ services:
       - SERVER_MEMORY=${SERVER_MEMORY:-6G}
       - PREGEN_RADIUS=${PREGEN_RADIUS:-2000}
       - PREGEN_TIMEOUT=${PREGEN_TIMEOUT:-21600}
-      - MIN_FREE_DISK_GB=${MIN_FREE_DISK_GB:-5}
     healthcheck:
       # /health reports "degraded" (still HTTP 200) when jars are missing;
       # the check only asserts the API is up. start_period is generous

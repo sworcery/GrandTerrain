@@ -289,7 +289,13 @@ public class GrandterrainBiomeSource extends BiomeSource {
         // The margin keeps the top few blocks on the surface biome so surface
         // painting and decoration still see the real biome.
         TerrainDensityFunction t = terrain;
-        if (t != null && blockY < surfaceAt(t, x, z, blockX, blockZ) - 8.0) {
+        // Margin 16, not 8: surfaceAt samples the quart-column CORNER (up to 3
+        // blocks away) while blockY is the quart floor (up to 3 below the real
+        // surface), and on steep terrain those stack — measured worst overshoot
+        // 13.05 blocks, mis-typing 0.95% of land surface columns as caverns
+        // (grass speckle on cliff faces, wrong mob spawns). 16 drops that to
+        // 0.009%; caves more than 16 blocks down are still caverns.
+        if (t != null && blockY < surfaceAt(t, x, z, blockX, blockZ) - 16.0) {
             return caverns;
         }
         if (blockY < yDeepOcean) return deepOcean;
