@@ -46,12 +46,20 @@ public class WatchtowerStructure extends Structure {
         ChunkPos chunkPos = context.chunkPos();
         int x = chunkPos.getMiddleBlockX();
         int z = chunkPos.getMiddleBlockZ();
-        int y = context.chunkGenerator().getBaseHeight(x, z, Heightmap.Types.WORLD_SURFACE_WG,
+        // OCEAN_FLOOR_WG, not WORLD_SURFACE_WG: these structures need SOLID
+        // GROUND. WORLD_SURFACE_WG correctly reports sea level over water, so
+        // using it here would place structures on the ocean surface (and, for
+        // dungeons, biome-check at sea level, which passes the land-biome gate).
+        int y = context.chunkGenerator().getBaseHeight(x, z, Heightmap.Types.OCEAN_FLOOR_WG,
                 context.heightAccessor(), context.randomState());
 
-        if (y < 135 || y > 500) return Optional.empty();
+        // Gate relative to the configured sea level, not a literal 135: seaLevel
+        // is configurable up to 512 and one shipped preset uses 160.
+        int seaLevel = context.chunkGenerator() instanceof com.grandterrain.worldgen.GrandterrainChunkGenerator g
+                ? g.getConfigSnapshot().seaLevel() : 128;
+        if (y < seaLevel + 7 || y > 500) return Optional.empty();
 
-        var hm = Heightmap.Types.WORLD_SURFACE_WG;
+        var hm = Heightmap.Types.OCEAN_FLOOR_WG;
         int yN = context.chunkGenerator().getBaseHeight(x, z - 5, hm, context.heightAccessor(), context.randomState());
         int yS = context.chunkGenerator().getBaseHeight(x, z + 5, hm, context.heightAccessor(), context.randomState());
         int yE = context.chunkGenerator().getBaseHeight(x + 5, z, hm, context.heightAccessor(), context.randomState());

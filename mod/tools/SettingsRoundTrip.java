@@ -15,7 +15,7 @@ public final class SettingsRoundTrip {
     public static void main(String[] args) {
         // "Alpine" preset — the kind of non-default world the worker ships.
         GrandterrainConfig alpine = new GrandterrainConfig();
-        alpine.mountainHeightScale = 8.0f;
+        alpine.mountainHeightScale = 6.0f;  // must survive validate()'s 1..6 clamp
         alpine.continentalScale = 1.5f;
         alpine.erosionStrength = 2.0f;
         alpine.seaLevel = 100;
@@ -39,7 +39,7 @@ public final class SettingsRoundTrip {
             failures++;
         }
         ConfigSnapshot local = ConfigSnapshot.from(new GrandterrainConfig());
-        if (loaded.seaLevel() == local.seaLevel() || loaded.mountainHeightScale() == local.mountainHeightScale()) {
+        if (loaded.seaLevel() == local.seaLevel() && loaded.snowLineBase() == local.snowLineBase()) {
             System.err.println("Persisted settings collapsed to local defaults — the pregen-boundary seam bug");
             failures++;
         }

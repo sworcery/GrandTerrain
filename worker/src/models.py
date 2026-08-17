@@ -11,7 +11,9 @@ class _CamelModel(BaseModel):
 
 
 class TerrainConfig(_CamelModel):
-    mountain_height_scale: float = Field(5.0, ge=1.0, le=10.0)
+    # Capped at 6: measured 5->10 raised the tallest peak by only 36 blocks
+    # while pushing terrain into the soft-ceiling zone (plateau, not peaks).
+    mountain_height_scale: float = Field(5.0, ge=1.0, le=6.0)
     continental_scale: float = Field(1.0, ge=0.5, le=3.0)
     erosion_strength: float = Field(1.0, ge=0.0, le=3.0)
     sea_level: int = Field(128, ge=60, le=200)

@@ -10,6 +10,9 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
  * "settings" field in level.dat) so a world always regenerates with the
  * settings it was created with — regardless of the config file on the
  * machine that later loads it. Without this, a world pre-generated with a
+ * NOTE: every field below is REQUIRED by the codec, so a world saved by
+ * this version fails to load if a field is later removed. Any NEW field
+ * must use optionalFieldOf(name, default) or it will break existing worlds.
  * non-default preset would grow a terrain seam at the pre-gen boundary the
  * moment it was opened on a client with different (default) config.
  */
@@ -100,17 +103,37 @@ public record ConfigSnapshot(
                 enableCastles, enableRuins, enableDungeons, enableWatchtowers);
     }
 
+    /**
+     * Decoded settings are validated exactly like the config file: a
+     * hand-edited level.dat or a datapack could otherwise feed unclamped
+     * values (or a world height disagreeing with the dimension type)
+     * straight into the noise router.
+     */
     private static ConfigSnapshot of(Shape s, Biomes b) {
-        return new ConfigSnapshot(
-                s.mountainHeightScale, s.continentalScale, s.erosionStrength,
-                s.seaLevel, s.worldMinY, s.worldHeight,
-                s.caveDensity, s.caveFrequency,
-                s.enableMegaCaverns, s.enableUndergroundRivers,
-                s.riverWidth, s.riverDepth,
-                b.snowLineBase, b.biomeBlendWidth, b.climateBlendWidth,
-                b.deepOceanOffset, b.coastalOffset, b.lowlandOffset,
-                b.cavernCenterY,
-                b.enableCastles, b.enableRuins, b.enableDungeons, b.enableWatchtowers);
+        GrandterrainConfig c = new GrandterrainConfig();
+        c.mountainHeightScale = s.mountainHeightScale();
+        c.continentalScale = s.continentalScale();
+        c.erosionStrength = s.erosionStrength();
+        c.seaLevel = s.seaLevel();
+        c.caveDensity = s.caveDensity();
+        c.caveFrequency = s.caveFrequency();
+        c.enableMegaCaverns = s.enableMegaCaverns();
+        c.enableUndergroundRivers = s.enableUndergroundRivers();
+        c.riverWidth = s.riverWidth();
+        c.riverDepth = s.riverDepth();
+        c.snowLineBase = b.snowLineBase();
+        c.biomeBlendWidth = b.biomeBlendWidth();
+        c.climateBlendWidth = b.climateBlendWidth();
+        c.deepOceanOffset = b.deepOceanOffset();
+        c.coastalOffset = b.coastalOffset();
+        c.lowlandOffset = b.lowlandOffset();
+        c.cavernCenterY = b.cavernCenterY();
+        c.enableCastles = b.enableCastles();
+        c.enableRuins = b.enableRuins();
+        c.enableDungeons = b.enableDungeons();
+        c.enableWatchtowers = b.enableWatchtowers();
+        c.validate();  // also re-pins worldMinY/worldHeight to the dimension type
+        return from(c);
     }
 
     public static ConfigSnapshot from(GrandterrainConfig c) {

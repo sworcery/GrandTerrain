@@ -47,7 +47,11 @@ public class DungeonStructure extends Structure {
         ChunkPos chunkPos = context.chunkPos();
         int x = chunkPos.getMiddleBlockX();
         int z = chunkPos.getMiddleBlockZ();
-        int surfaceY = context.chunkGenerator().getBaseHeight(x, z, Heightmap.Types.WORLD_SURFACE_WG,
+        // OCEAN_FLOOR_WG, not WORLD_SURFACE_WG: these structures need SOLID
+        // GROUND. WORLD_SURFACE_WG correctly reports sea level over water, so
+        // using it here would place structures on the ocean surface (and, for
+        // dungeons, biome-check at sea level, which passes the land-biome gate).
+        int surfaceY = context.chunkGenerator().getBaseHeight(x, z, Heightmap.Types.OCEAN_FLOOR_WG,
                 context.heightAccessor(), context.randomState());
 
         int minY = context.heightAccessor().getMinY();

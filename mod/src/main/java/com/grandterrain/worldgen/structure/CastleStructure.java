@@ -48,11 +48,19 @@ public class CastleStructure extends Structure {
         ChunkPos chunkPos = context.chunkPos();
         int x = chunkPos.getMiddleBlockX();
         int z = chunkPos.getMiddleBlockZ();
-        var hm = Heightmap.Types.WORLD_SURFACE_WG;
+        // OCEAN_FLOOR_WG, not WORLD_SURFACE_WG: these structures need SOLID
+        // GROUND. WORLD_SURFACE_WG correctly reports sea level over water, so
+        // using it here would place structures on the ocean surface (and, for
+        // dungeons, biome-check at sea level, which passes the land-biome gate).
+        var hm = Heightmap.Types.OCEAN_FLOOR_WG;
         int y = context.chunkGenerator().getBaseHeight(x, z, hm,
                 context.heightAccessor(), context.randomState());
 
-        if (y < 135 || y > 350) return Optional.empty();
+        // Gate relative to the configured sea level, not a literal 135: seaLevel
+        // is configurable up to 512 and one shipped preset uses 160.
+        int seaLevel = context.chunkGenerator() instanceof com.grandterrain.worldgen.GrandterrainChunkGenerator g
+                ? g.getConfigSnapshot().seaLevel() : 128;
+        if (y < seaLevel + 7 || y > 350) return Optional.empty();
 
         // Flatness gate over the ACTUAL wall ring (8 points at the wall
         // radius, including diagonals). The old 4 axis samples at ±20 missed

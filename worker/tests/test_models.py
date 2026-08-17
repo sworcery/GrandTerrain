@@ -52,9 +52,9 @@ def test_booleans_serialize_lowercase():
 
 def test_camel_case_aliases_accepted():
     req = GenerateRequest.model_validate(
-        {"config": {"terrain": {"mountainHeightScale": 7.5, "seaLevel": 90}}}
+        {"config": {"terrain": {"mountainHeightScale": 5.5, "seaLevel": 90}}}
     )
-    assert req.config.terrain.mountain_height_scale == 7.5
+    assert req.config.terrain.mountain_height_scale == 5.5
     assert req.config.terrain.sea_level == 90
 
 
@@ -63,3 +63,6 @@ def test_out_of_range_values_rejected():
         WorldConfig.model_validate({"caves": {"cavernCenterY": -300}})
     with pytest.raises(ValidationError):
         WorldConfig.model_validate({"terrain": {"seaLevel": 500}})
+    with pytest.raises(ValidationError):
+        # Mountain scale above 6 buys plateau, not peaks — clamped mod-side too.
+        WorldConfig.model_validate({"terrain": {"mountainHeightScale": 8.0}})
