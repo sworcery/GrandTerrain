@@ -39,17 +39,66 @@ web/     — Next.js configurator: tune parameters, generate & download a world
 worker/  — backend that runs a headless Fabric server to generate a world from a config
 ```
 
-## Running the full stack (web + worker)
+## Deploying on Unraid (or any Docker host)
+
+The full stack is two containers: the web configurator (port 3000) and the
+generation worker (port 8080). The web UI proxies all worker calls same-origin
+under `/worker`, so browsers only ever need to reach the web port.
 
 ```bash
-# from the repo root; use your LAN IP so browsers can reach the worker
-NEXT_PUBLIC_WORKER_URL=http://<this-host>:8080 docker compose up --build
+git clone https://github.com/sworcery/GrandTerrain.git
+cd GrandTerrain
+cp .env.example .env      # optional: edit ports / memory / radius
+docker compose up --build -d
 ```
 
-Web configurator on port 3000, generation worker on port 8080.
-`NEXT_PUBLIC_WORKER_URL` is baked into the web bundle at build time and must
-be the worker address reachable from the *browser* (LAN IP, not localhost,
-unless you browse from the same machine).
+Docker Compose auto-loads `./.env`. Every variable is optional; see
+[`.env.example`](.env.example) for the full list. You do **not** need to set
+`NEXT_PUBLIC_WORKER_URL` — it is only for making the browser talk to the worker
+directly (e.g. via a LAN IP), and because it is baked into the web bundle at
+build time, changing it requires `docker compose up --build`, not a restart.
+
+**First boot** downloads four jars into the data volume: the Fabric server
+launcher, Fabric API, [Chunky](https://modrinth.com/plugin/chunky), and the
+GrandTerrain mod jar from the GitHub release. This can take a few minutes.
+Check progress with:
+
+```bash
+docker compose logs worker | grep -i fetched
+curl http://<host>:8080/health
+```
+
+**Resource requirements**
+
+- **RAM: ~8 GB free for the generation JVM** (`SERVER_MEMORY=6G` heap plus JVM
+  overhead). Do **not** set a container memory limit below that — the kernel
+  OOM-killer kills the JVM silently and you get a truncated or failed world.
+- **Disk: ~5 GB free per job** at defaults (the world tree and its zip coexist
+  until cleanup). The worker refuses to start a job below `MIN_FREE_DISK_GB`.
+- **CPU:** pegged for the whole job — roughly 35 min to an hour at the default
+  2000-block radius depending on hardware.
+
+**One process only.** The worker's job slot is in-memory and assumes a single
+uvicorn process. Do not run multiple replicas or `--workers N`; leave
+`MAX_CONCURRENT_JOBS=1`.
+
+**Reverse proxy.** Because worker calls are proxied same-origin at `/worker`,
+you can put the web port behind HTTPS (SWAG, Nginx Proxy Manager, Cloudflare
+Tunnel) and it just works — only the web port needs exposing. Port 8080 can
+stay LAN-only or unpublished.
+
+**Sanity checks**
+
+```bash
+curl http://<host>:8080/health
+docker compose logs worker
+```
+
+**Data.** The worker stores jars, job dirs, and finished zips in
+`./worker/data` (the `./worker/data:/app/data` volume in `docker-compose.yml`
+— point it at `/mnt/user/appdata/grandterrain` on Unraid if you prefer). To
+force a re-download of the mod jar (e.g. after a new release), delete
+`grandterrain.jar` from that directory and restart the worker.
 
 ## Running the worker alone
 
@@ -64,15 +113,18 @@ GrandTerrain mod jar) into the mounted `data/` volume. Each generation job
 boots a headless Fabric server, pre-generates a square region around spawn
 with Chunky, and packages the world into a downloadable zip.
 
-Key environment knobs (see `worker/.env.example` for the full list):
+Key environment knobs (see `.env.example` / `worker/.env.example` for the full list):
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `SERVER_MEMORY` | `6G` | Max heap for the generation server — 1024-tall chunks are memory-hungry; too low OOMs mid-pre-gen |
 | `PREGEN_RADIUS` | `2000` | Pre-generation radius in blocks (2000 → a 4000×4000 area); `0` disables |
 | `PREGEN_TIMEOUT` | `21600` | Hard cap in seconds; partial pre-gen still ships |
-| `MAX_CONCURRENT_JOBS` | `1` | Generation jobs allowed at once |
+| `MAX_CONCURRENT_JOBS` | `1` | Generation jobs allowed at once (keep at 1 — single-process job slot) |
 | `JOB_RETENTION_HOURS` | `24` | Age after which job dirs and world zips are deleted |
+| `MIN_FREE_DISK_GB` | `5` | Refuse to start a job if the data volume has less free space than this |
+| `WORKER_PORT` | `8080` | Host port for the worker API |
+| `WEB_PORT` | `3000` | Host port for the web configurator (root stack only) |
 
 Rough sizing from a measured run (~17 chunks/sec on modest hardware): the
 default 2000-block radius is ~63k chunks — about an hour and a ~450 MB zip.
