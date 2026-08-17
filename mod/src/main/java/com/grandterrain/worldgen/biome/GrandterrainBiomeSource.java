@@ -76,24 +76,31 @@ public class GrandterrainBiomeSource extends BiomeSource {
     /** Set with the climate noise in createState; null only before that. */
     private volatile TerrainDensityFunction terrain;
 
-    /** One-entry per-thread cache: fillBiomesFromNoise walks a whole column
-     *  of 4-block cells per (x,z), so the surface height is computed once
-     *  per quart column instead of once per cell (~16 per chunk). */
+    /**
+     * 16-entry direct-mapped per-thread cache of surface height, one slot per
+     * quart column of a chunk (4x4). MC fills biomes with z innermost, so a
+     * single-entry cache would miss on literally every call; indexing by the
+     * low bits of the quart coords makes every column a permanent hit after
+     * its first touch (~16 surface evaluations per chunk instead of ~4096).
+     */
     private static final class ColumnCache {
-        int qx = Integer.MIN_VALUE;
-        int qz = Integer.MIN_VALUE;
-        double surface;
+        final int[] keyX = new int[16];
+        final int[] keyZ = new int[16];
+        final double[] surface = new double[16];
+        final boolean[] valid = new boolean[16];
     }
     private final ThreadLocal<ColumnCache> columnCache = ThreadLocal.withInitial(ColumnCache::new);
 
     private double surfaceAt(TerrainDensityFunction t, int quartX, int quartZ, int blockX, int blockZ) {
         ColumnCache c = columnCache.get();
-        if (c.qx != quartX || c.qz != quartZ) {
-            c.surface = t.computeSurfaceHeight(blockX, blockZ);
-            c.qx = quartX;
-            c.qz = quartZ;
+        int i = ((quartX & 3) << 2) | (quartZ & 3);
+        if (!c.valid[i] || c.keyX[i] != quartX || c.keyZ[i] != quartZ) {
+            c.surface[i] = t.computeSurfaceHeight(blockX, blockZ);
+            c.keyX[i] = quartX;
+            c.keyZ[i] = quartZ;
+            c.valid[i] = true;
         }
-        return c.surface;
+        return c.surface[i];
     }
 
     public GrandterrainBiomeSource(HolderGetter<Biome> biomeGetter) {
