@@ -77,25 +77,56 @@ def reconcile_stale_jobs() -> None:
             continue
         if meta.get("status") in ("pending", "generating"):
             meta["status"] = "failed"
-            meta_path.write_text(json.dumps(meta, indent=2))
+            meta["error"] = "Worker restarted during generation"
+            write_meta_atomic(meta_path, meta)
             logger.warning("Marked stale job %s as failed (worker restarted)", entry.name)
         # A generation killed mid-flight can leave its server instance behind.
         shutil.rmtree(entry / "server", ignore_errors=True)
+
+
+def _read_meta(job_id: str) -> dict | None:
+    """Return a job's meta dict, or None if it is missing/unreadable."""
+    try:
+        return json.loads((JOBS_DIR / job_id / "meta.json").read_text())
+    except (FileNotFoundError, ValueError, OSError):
+        return None
+
+
+def _is_expired(entry: Path, meta: dict | None, cutoff: float) -> bool:
+    """Age comes from meta created_at (the job's real age); st_mtime is only
+    a fallback for unreadable meta, since a status write during generation
+    would otherwise make a long job look brand new."""
+    if meta and meta.get("created_at"):
+        try:
+            created = datetime.fromisoformat(meta["created_at"])
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            return created.timestamp() < cutoff
+        except (ValueError, TypeError):
+            pass
+    return entry.stat().st_mtime < cutoff
 
 
 def sweep_old_jobs() -> None:
     """Delete job dirs and world zips older than JOB_RETENTION_HOURS.
 
     Without retention every job leaves a meta/log dir and a multi-hundred-MB
-    zip forever, and a full disk takes the whole service down.
+    zip forever, and a full disk takes the whole service down. Jobs that are
+    still pending/generating are never swept, however old they look.
     """
     cutoff = time.time() - RETENTION_HOURS * 3600
-    for base in (JOBS_DIR, WORLDS_DIR):
+    # Zips first: their status/age comes from the job's meta, which the
+    # JOBS_DIR pass deletes.
+    for base in (WORLDS_DIR, JOBS_DIR):
         if not base.exists():
             continue
         for entry in base.iterdir():
             try:
-                if entry.stat().st_mtime < cutoff:
+                job_id = entry.name.split(".", 1)[0]
+                meta = _read_meta(job_id)
+                if meta and meta.get("status") in ("pending", "generating"):
+                    continue
+                if _is_expired(entry, meta, cutoff):
                     if entry.is_dir():
                         shutil.rmtree(entry, ignore_errors=True)
                     else:
@@ -112,14 +143,26 @@ def write_config_properties(job_id: str, config: WorldConfig) -> Path:
     return props_path
 
 
+def write_meta_atomic(meta_path: Path, meta: dict) -> None:
+    """Write meta.json via a temp file + rename so readers never see a partial file."""
+    tmp = meta_path.with_name(meta_path.name + ".tmp")
+    tmp.write_text(json.dumps(meta, indent=2))
+    os.replace(tmp, meta_path)
+
+
 def _update_meta(job_id: str, updates: dict) -> None:
     meta_path = JOBS_DIR / job_id / "meta.json"
-    if meta_path.exists():
-        meta = json.loads(meta_path.read_text())
-    else:
-        meta = {}
-    meta.update(updates)
-    meta_path.write_text(json.dumps(meta, indent=2))
+    try:
+        if meta_path.exists():
+            meta = json.loads(meta_path.read_text())
+        else:
+            meta = {}
+        meta.update(updates)
+        write_meta_atomic(meta_path, meta)
+    except (FileNotFoundError, ValueError, OSError):
+        # The job dir may have been swept out from under us; never let this
+        # escape into the background task and take the job's cleanup with it.
+        logger.warning("Could not update meta for job %s", job_id, exc_info=True)
 
 
 def _setup_server_instance(job_id: str, config: WorldConfig) -> Path:
@@ -152,17 +195,56 @@ def _setup_server_instance(job_id: str, config: WorldConfig) -> Path:
 def _package_world(job_id: str, instance_dir: Path) -> Path:
     world_dir = instance_dir / "world"
     zip_path = WORLDS_DIR / f"{job_id}.zip"
+    # Write to a .part and rename at the end: the download endpoint checks
+    # `zip_path.exists()`, so it must never see a half-written archive.
+    part_path = WORLDS_DIR / f"{job_id}.zip.part"
 
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        if world_dir.exists():
-            for file_path in world_dir.rglob("*"):
-                if file_path.is_file():
-                    arcname = f"world/{file_path.relative_to(world_dir)}"
-                    zf.write(file_path, arcname)
-        else:
-            zf.writestr("world/README.txt", "World generation requires a Fabric server.\n")
+    try:
+        # ZIP_STORED: region files are already zlib-compressed, so deflating
+        # them again costs 5-10x the CPU for a few percent of size.
+        with zipfile.ZipFile(part_path, "w", zipfile.ZIP_STORED) as zf:
+            if world_dir.exists():
+                for file_path in world_dir.rglob("*"):
+                    if file_path.is_file():
+                        arcname = f"world/{file_path.relative_to(world_dir)}"
+                        zf.write(file_path, arcname)
+            else:
+                zf.writestr("world/README.txt", "World generation requires a Fabric server.\n")
+        os.replace(part_path, zip_path)
+    except BaseException:
+        part_path.unlink(missing_ok=True)
+        raise
 
     return zip_path
+
+
+async def _stop_proc(proc: asyncio.subprocess.Process) -> None:
+    """Terminate a server process, escalating to kill; never waits forever.
+
+    A JVM that ignores SIGTERM would otherwise hold the only job slot until
+    the container restarts, 429ing every request in the meantime.
+    """
+    if proc.returncode is not None:
+        return
+    proc.terminate()
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=30)
+        return
+    except asyncio.TimeoutError:
+        logger.warning("Server ignored SIGTERM for 30s, killing")
+    proc.kill()
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=10)
+    except asyncio.TimeoutError:
+        logger.error("Server did not exit 10s after SIGKILL (pid %s)", proc.pid)
+
+
+def _fail(job_id: str, error: str) -> None:
+    _update_meta(job_id, {
+        "status": "failed",
+        "error": error,
+        "failed_at": datetime.now(timezone.utc).isoformat(),
+    })
 
 
 async def generate_world(job_id: str, config: WorldConfig) -> Path | None:
@@ -172,19 +254,26 @@ async def generate_world(job_id: str, config: WorldConfig) -> Path | None:
         "started_at": datetime.now(timezone.utc).isoformat(),
     })
 
+    loop = asyncio.get_running_loop()
+    for name, jar in (("grandterrain.jar", MOD_JAR), ("fabric-server-launch.jar", SERVER_JAR)):
+        if not jar.exists():
+            # E.g. the mod jar never downloaded (bootstrap starts the API anyway).
+            logger.error("Required jar missing for job %s: %s", job_id, jar)
+            _fail(job_id, f"Required jar missing: {name}")
+            return None
     try:
-        instance_dir = _setup_server_instance(job_id, config)
+        # Jar copies are sync disk I/O; keep them off the event loop.
+        instance_dir = await loop.run_in_executor(
+            None, _setup_server_instance, job_id, config
+        )
     except Exception:
-        # E.g. the mod jar never downloaded (bootstrap starts the API anyway).
         # Without this the job stays "generating" until the next restart.
         logger.exception("Failed to set up server instance for job %s", job_id)
-        _update_meta(job_id, {
-            "status": "failed",
-            "failed_at": datetime.now(timezone.utc).isoformat(),
-        })
+        _fail(job_id, "Failed to set up server instance (see worker logs)")
         return None
     server_jar = instance_dir / "fabric-server-launch.jar"
     success = False
+    error = "Generation failed (see worker logs)"
 
     if server_jar.exists():
         logger.info("Starting Fabric server for job %s", job_id)
@@ -259,13 +348,21 @@ async def generate_world(job_id: str, config: WorldConfig) -> Path | None:
                                     "Server exited during pre-generation for job %s", job_id
                                 )
                                 success = False
+                                error = "Server exited unexpectedly during pre-generation"
                         except asyncio.TimeoutError:
                             # Best-effort: the chunks generated so far are a
-                            # valid (just smaller) pre-genned world.
+                            # valid (just smaller) pre-genned world. Cancel
+                            # the task and flush regions before "stop" so the
+                            # in-flight chunks land on disk.
                             logger.warning(
                                 "Pre-generation timed out for job %s — packaging what completed",
                                 job_id,
                             )
+                            try:
+                                proc.stdin.write(b"chunky cancel\nsave-all flush\n")
+                                await proc.stdin.drain()
+                            except (BrokenPipeError, ConnectionResetError):
+                                logger.debug("Server pipe already closed for job %s", job_id)
                     async def drain_rest():
                         # Keep consuming stdout through the settle/stop window:
                         # a chatty server can fill the 64K pipe buffer and
@@ -300,8 +397,7 @@ async def generate_world(job_id: str, config: WorldConfig) -> Path | None:
                             await asyncio.wait_for(proc.wait(), timeout=60)
                         except asyncio.TimeoutError:
                             logger.warning("Server didn't stop cleanly, terminating")
-                            proc.terminate()
-                            await proc.wait()
+                            await _stop_proc(proc)
 
                     try:
                         await asyncio.wait_for(drain, timeout=10)
@@ -315,14 +411,15 @@ async def generate_world(job_id: str, config: WorldConfig) -> Path | None:
                             pass
                 else:
                     logger.error("Server never became ready for job %s", job_id)
-                    if proc.returncode is None:
-                        proc.terminate()
-                    await proc.wait()
+                    error = "Server exited before becoming ready (see server.log)"
+                    await _stop_proc(proc)
 
         except asyncio.TimeoutError:
             logger.error("Server startup timed out for job %s", job_id)
+            error = f"Server never became ready within {STARTUP_TIMEOUT}s"
         except Exception:
             logger.exception("Error during world generation for job %s", job_id)
+            error = "Unexpected error during generation (see worker logs)"
         finally:
             # Runs even on CancelledError (app shutdown), which the handlers
             # above miss — never leave the JVM running.
@@ -343,35 +440,36 @@ async def generate_world(job_id: str, config: WorldConfig) -> Path | None:
                 job_id, SERVER_MEMORY, PREGEN_RADIUS,
             )
             success = False
+            error = "Server ran out of memory (raise SERVER_MEMORY or lower PREGEN_RADIUS)"
     else:
         logger.warning(
             "No server jar found at %s — cannot generate for job %s",
             server_jar, job_id,
         )
+        error = "Required jar missing: fabric-server-launch.jar"
+
+    # rmtree/zip are sync disk I/O on a multi-hundred-MB tree; run them off
+    # the event loop or every status poll and download stalls for minutes.
+    def _rm_instance() -> None:
+        shutil.rmtree(instance_dir, ignore_errors=True)
 
     if not success:
-        shutil.rmtree(instance_dir, ignore_errors=True)
-        _update_meta(job_id, {
-            "status": "failed",
-            "failed_at": datetime.now(timezone.utc).isoformat(),
-        })
-        logger.error("Generation failed for job %s", job_id)
+        await loop.run_in_executor(None, _rm_instance)
+        _fail(job_id, error)
+        logger.error("Generation failed for job %s: %s", job_id, error)
         return None
 
     try:
-        zip_path = _package_world(job_id, instance_dir)
+        zip_path = await loop.run_in_executor(None, _package_world, job_id, instance_dir)
     except Exception:
         # Without this a zip failure (e.g. disk full) strands the job in
         # "generating" until the next restart's reconcile pass.
         logger.exception("Failed to package world for job %s", job_id)
-        shutil.rmtree(instance_dir, ignore_errors=True)
-        _update_meta(job_id, {
-            "status": "failed",
-            "failed_at": datetime.now(timezone.utc).isoformat(),
-        })
+        await loop.run_in_executor(None, _rm_instance)
+        _fail(job_id, "Failed to package world (disk full?)")
         return None
 
-    shutil.rmtree(instance_dir, ignore_errors=True)
+    await loop.run_in_executor(None, _rm_instance)
 
     _update_meta(job_id, {
         "status": "ready",

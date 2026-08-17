@@ -1,6 +1,44 @@
 from pathlib import Path
 
+import pytest
+
+from src import bootstrap
 from src.bootstrap import fetch
+
+
+@pytest.fixture(autouse=True)
+def _no_backoff(monkeypatch):
+    monkeypatch.setattr(bootstrap, "BACKOFF", (0, 0, 0))
+
+
+def test_fetch_retries_then_succeeds(tmp_path, monkeypatch):
+    src = _fake_jar(tmp_path / "src.jar")
+    dest = tmp_path / "dest.jar"
+    real = bootstrap.urllib.request.urlopen
+    calls = []
+
+    def flaky(url, timeout=None):
+        calls.append(timeout)
+        if len(calls) < 3:
+            raise OSError("connection reset")
+        return real(url, timeout=timeout)
+
+    monkeypatch.setattr(bootstrap.urllib.request, "urlopen", flaky)
+    assert fetch(dest, src.as_uri()) is True
+    assert len(calls) == 3
+    assert all(t == 20 for t in calls)
+
+
+def test_fetch_gives_up_after_three_attempts(tmp_path, monkeypatch):
+    calls = []
+
+    def dead(url, timeout=None):
+        calls.append(url)
+        raise OSError("no route to host")
+
+    monkeypatch.setattr(bootstrap.urllib.request, "urlopen", dead)
+    assert fetch(tmp_path / "dest.jar", "https://example.invalid/x.jar") is False
+    assert len(calls) == 3
 
 
 def _fake_jar(path: Path, magic: bytes = b"PK") -> Path:

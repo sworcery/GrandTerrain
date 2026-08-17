@@ -96,3 +96,6 @@ class JobResponse(_CamelModel):
     job_id: str
     status: str
     created_at: str
+    # Short human-readable reason when status == "failed"; the web client
+    # shows it so a self-hoster isn't left guessing at container logs.
+    error: str | None = None

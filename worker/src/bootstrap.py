@@ -7,6 +7,7 @@ mounted volume only downloads on first boot or after a deliberate delete.
 import logging
 import os
 import sys
+import time
 import urllib.request
 from pathlib import Path
 
@@ -35,29 +36,41 @@ JARS = {
 }
 
 
+ATTEMPTS = 3
+BACKOFF = (2, 4, 8)
+
+
 def fetch(dest: Path, url: str) -> bool:
     if dest.exists() and dest.stat().st_size > 0:
         logger.info("%s already present (%d bytes)", dest.name, dest.stat().st_size)
         return True
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".part")
-    try:
-        logger.info("Downloading %s <- %s", dest.name, url)
-        with urllib.request.urlopen(url, timeout=120) as resp, open(tmp, "wb") as out:
-            while chunk := resp.read(1 << 16):
-                out.write(chunk)
-        size = tmp.stat().st_size
-        with open(tmp, "rb") as fh:
-            magic = fh.read(2)
-        if size < 1024 or magic != b"PK":
-            raise ValueError(f"downloaded file is not a jar ({size} bytes)")
-        tmp.replace(dest)
-        logger.info("Fetched %s (%d bytes)", dest.name, size)
-        return True
-    except Exception as e:
-        logger.error("Failed to fetch %s: %s", dest.name, e)
-        tmp.unlink(missing_ok=True)
-        return False
+    # First boot commonly races DNS/network coming up or hits a CDN blip; a
+    # single failed GET would otherwise leave the worker unprovisioned until
+    # someone restarts the container.
+    for attempt in range(1, ATTEMPTS + 1):
+        try:
+            logger.info("Downloading %s <- %s (attempt %d/%d)", dest.name, url, attempt, ATTEMPTS)
+            with urllib.request.urlopen(url, timeout=20) as resp, open(tmp, "wb") as out:
+                while chunk := resp.read(1 << 16):
+                    out.write(chunk)
+            size = tmp.stat().st_size
+            with open(tmp, "rb") as fh:
+                magic = fh.read(2)
+            if size < 1024 or magic != b"PK":
+                raise ValueError(f"downloaded file is not a jar ({size} bytes)")
+            tmp.replace(dest)
+            logger.info("Fetched %s (%d bytes)", dest.name, size)
+            return True
+        except Exception as e:
+            logger.error(
+                "Failed to fetch %s (attempt %d/%d): %s", dest.name, attempt, ATTEMPTS, e
+            )
+            tmp.unlink(missing_ok=True)
+            if attempt < ATTEMPTS:
+                time.sleep(BACKOFF[attempt - 1])
+    return False
 
 
 def main() -> int:
