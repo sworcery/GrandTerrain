@@ -19,5 +19,6 @@
   "structure.grandterrain.castle": "Castle",
   "structure.grandterrain.ruin": "Ruin",
   "structure.grandterrain.dungeon": "Dungeon",
-  "structure.grandterrain.watchtower": "Watchtower"
+  "structure.grandterrain.watchtower": "Watchtower",
+  "biome.grandterrain.caverns": "Caverns"
 }

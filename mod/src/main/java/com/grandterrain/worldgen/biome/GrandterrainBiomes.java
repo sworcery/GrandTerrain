@@ -8,6 +8,7 @@ import net.minecraft.world.level.biome.Biome;
 public class GrandterrainBiomes {
 
     public static final ResourceKey<Biome> DEEP_OCEAN = register("deep_ocean");
+    public static final ResourceKey<Biome> CAVERNS = register("caverns");
     public static final ResourceKey<Biome> COASTAL_CLIFFS = register("coastal_cliffs");
     public static final ResourceKey<Biome> LOWLAND_PLAINS = register("lowland_plains");
     public static final ResourceKey<Biome> TEMPERATE_FOREST = register("temperate_forest");

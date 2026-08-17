@@ -1,6 +1,7 @@
 {
   "replace": false,
   "values": [
+    "grandterrain:caverns",
     "grandterrain:deep_ocean",
     "grandterrain:coastal_cliffs",
     "grandterrain:lowland_plains",

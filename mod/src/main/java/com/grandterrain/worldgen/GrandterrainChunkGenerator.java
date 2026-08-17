@@ -7,6 +7,7 @@ import com.grandterrain.worldgen.biome.GrandterrainBiomes;
 import com.grandterrain.worldgen.cave.CarveResult;
 import com.grandterrain.worldgen.cave.CaveContributor;
 import com.grandterrain.worldgen.noise.GrandterrainNoiseRouter;
+import com.grandterrain.worldgen.noise.WorldgenHash;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.core.BlockPos;
@@ -35,9 +36,19 @@ import java.util.concurrent.CompletableFuture;
 
 public class GrandterrainChunkGenerator extends ChunkGenerator {
 
+    /**
+     * The generation settings are serialized INTO the world ("settings") so
+     * it always regenerates with the config it was created with. The field
+     * is optional: at world creation the world-preset JSON carries none, and
+     * the fallback reads the local config file; Minecraft then re-serializes
+     * the generator into level.dat and every later load reads the persisted
+     * values back — the world becomes self-describing. Pre-existing worlds
+     * (no field) keep loading via the same fallback.
+     */
     public static final MapCodec<GrandterrainChunkGenerator> CODEC = RecordCodecBuilder.mapCodec(instance ->
             instance.group(
-                    BiomeSource.CODEC.fieldOf("biome_source").forGetter(gen -> gen.biomeSource)
+                    BiomeSource.CODEC.fieldOf("biome_source").forGetter(gen -> gen.biomeSource),
+                    ConfigSnapshot.CODEC.optionalFieldOf("settings").forGetter(gen -> java.util.Optional.of(gen.config))
             ).apply(instance, GrandterrainChunkGenerator::new)
     );
 
@@ -54,8 +65,14 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
     private volatile GrandterrainNoiseRouter noiseRouter;
 
     public GrandterrainChunkGenerator(BiomeSource biomeSource) {
+        this(biomeSource, java.util.Optional.empty());
+    }
+
+    public GrandterrainChunkGenerator(BiomeSource biomeSource, java.util.Optional<ConfigSnapshot> settings) {
         super(biomeSource);
-        this.config = ConfigSnapshot.from(ConfigManager.getConfig());
+        // Absent only at world creation (world-preset JSON) or for worlds
+        // saved before settings were persisted — fall back to the local file.
+        this.config = settings.orElseGet(() -> ConfigSnapshot.from(ConfigManager.getConfig()));
     }
 
     @Override
@@ -66,6 +83,10 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
     @Override
     public ChunkGeneratorStructureState createState(
             HolderLookup<StructureSet> structureSetLookup, RandomState randomState, long seed) {
+        // ORDERING IS LOAD-BEARING: the router and the biome source's climate
+        // noise must be published BEFORE super.createState(), which kicks off
+        // stronghold-ring placement on an async worker thread that calls
+        // getNoiseBiome. Both fields are volatile so that publication is safe.
         this.noiseRouter = new GrandterrainNoiseRouter(seed, config);
 
         if (biomeSource instanceof GrandterrainBiomeSource gbs) {
@@ -128,29 +149,6 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
                 EnumSet.of(Heightmap.Types.OCEAN_FLOOR_WG, Heightmap.Types.WORLD_SURFACE_WG));
     }
 
-    /**
-     * Avalanche hash for surface dithering. The previous per-site linear
-     * hashes (x*31+z*17 &amp; mask, etc.) all reduce modulo a power of two to
-     * straight diagonal stripe patterns — visible as printed lines, and
-     * glaring in Voxy LOD color maps. Different consumers take different
-     * bit ranges of the same hash so their patterns are uncorrelated.
-     */
-    private static int hash2(int x, int z) {
-        int h = x * 0x85EBCA6B + z * 0xC2B2AE35;
-        h ^= h >>> 15;
-        h *= 0x27D4EB2F;
-        h ^= h >>> 13;
-        return h;
-    }
-
-    private static int hash3(int x, int y, int z) {
-        int h = x * 0x85EBCA6B + y * 0x9E3779B9 + z * 0xC2B2AE35;
-        h ^= h >>> 15;
-        h *= 0x27D4EB2F;
-        h ^= h >>> 13;
-        return h;
-    }
-
     private int findSurfaceY(ChunkAccess chunk, int localX, int localZ, int minY, int maxY,
                               BlockPos.MutableBlockPos pos) {
         // OCEAN_FLOOR_WG is primed before buildSurface; starting there skips
@@ -187,7 +185,7 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
         }
         // Beach band with hash-jittered upper edge so the sand/grass boundary
         // isn't a dead-flat worldwide contour line.
-        if (surfaceY < seaLevel + 1 + (hash2(worldX, worldZ) & 3)) {
+        if (surfaceY < seaLevel + 1 + (WorldgenHash.mix2(worldX, worldZ) & 3)) {
             applyBeach(chunk, localX, localZ, surfaceY, minY, cold, pos);
             return;
         }
@@ -202,7 +200,7 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
         // blocks below the line; non-snow columns fall through to biome paint.
         if (surfaceY > snowLine - 40) {
             float p = (surfaceY - (snowLine - 40)) / 40.0f;
-            if (((hash2(worldX, worldZ) >>> 16 & 255) / 255.0f) < p) {
+            if (((WorldgenHash.mix2(worldX, worldZ) >>> 16 & 255) / 255.0f) < p) {
                 applySnowPeaks(chunk, localX, localZ, surfaceY, minY, pos);
                 return;
             }
@@ -277,7 +275,7 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
                                          int surfaceY, int minY,
                                          int worldX, int worldZ, BlockPos.MutableBlockPos pos) {
         pos.set(localX, surfaceY, localZ);
-        boolean isPodzol = (hash2(worldX, worldZ) >>> 14 & 3) == 0;
+        boolean isPodzol = (WorldgenHash.mix2(worldX, worldZ) >>> 14 & 3) == 0;
         chunk.setBlockState(pos, isPodzol ? Blocks.PODZOL.defaultBlockState() :
                 Blocks.GRASS_BLOCK.defaultBlockState(), 0);
         for (int depth = 1; depth < 3 && surfaceY - depth >= minY; depth++) {
@@ -290,7 +288,7 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
                                        int surfaceY, int minY,
                                        int worldX, int worldZ, BlockPos.MutableBlockPos pos) {
         pos.set(localX, surfaceY, localZ);
-        boolean vent = (hash2(worldX, worldZ) >>> 5 & 7) == 0;
+        boolean vent = (WorldgenHash.mix2(worldX, worldZ) >>> 5 & 7) == 0;
         chunk.setBlockState(pos, vent ? Blocks.BASALT.defaultBlockState() :
                 Blocks.BLACKSTONE.defaultBlockState(), 0);
         for (int depth = 1; depth < 3 && surfaceY - depth >= minY; depth++) {
@@ -303,7 +301,7 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
                                       int surfaceY, int minY,
                                       int worldX, int worldZ, BlockPos.MutableBlockPos pos) {
         pos.set(localX, surfaceY, localZ);
-        boolean isGravel = (hash2(worldX, worldZ) >>> 10 & 7) == 0;
+        boolean isGravel = (WorldgenHash.mix2(worldX, worldZ) >>> 10 & 7) == 0;
         if (isGravel) {
             chunk.setBlockState(pos, Blocks.GRAVEL.defaultBlockState(), 0);
         }
@@ -335,7 +333,7 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
         chunk.setBlockState(pos, Blocks.GRASS_BLOCK.defaultBlockState(), 0);
         for (int depth = 1; depth < 4 && surfaceY - depth >= minY; depth++) {
             pos.set(localX, surfaceY - depth, localZ);
-            boolean isClay = (hash2(worldX, worldZ) >>> 8 & 7) == 0;
+            boolean isClay = (WorldgenHash.mix2(worldX, worldZ) >>> 8 & 7) == 0;
             chunk.setBlockState(pos, isClay ? Blocks.CLAY.defaultBlockState() :
                     Blocks.DIRT.defaultBlockState(), 0);
         }
@@ -345,7 +343,7 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
                                      int surfaceY, int minY,
                                      int worldX, int worldZ, BlockPos.MutableBlockPos pos) {
         pos.set(localX, surfaceY, localZ);
-        boolean isSnow = (hash2(worldX, worldZ) & 3) < 2;
+        boolean isSnow = (WorldgenHash.mix2(worldX, worldZ) & 3) < 2;
         if (isSnow) {
             chunk.setBlockState(pos, Blocks.SNOW_BLOCK.defaultBlockState(), 0);
             if (surfaceY + 1 <= minY + chunk.getHeight() - 1) {
@@ -355,7 +353,7 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
                 }
             }
         } else {
-            boolean isPodzol = (hash2(worldX, worldZ) >>> 2 & 3) == 0;
+            boolean isPodzol = (WorldgenHash.mix2(worldX, worldZ) >>> 2 & 3) == 0;
             chunk.setBlockState(pos, isPodzol ? Blocks.PODZOL.defaultBlockState() :
                     Blocks.COARSE_DIRT.defaultBlockState(), 0);
         }
@@ -369,7 +367,7 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
                                       int surfaceY, int minY,
                                       int worldX, int worldZ, BlockPos.MutableBlockPos pos) {
         pos.set(localX, surfaceY, localZ);
-        boolean isCoarse = (hash2(worldX, worldZ) >>> 4 & 7) == 0;
+        boolean isCoarse = (WorldgenHash.mix2(worldX, worldZ) >>> 4 & 7) == 0;
         chunk.setBlockState(pos, isCoarse ? Blocks.COARSE_DIRT.defaultBlockState() :
                 Blocks.GRASS_BLOCK.defaultBlockState(), 0);
         for (int depth = 1; depth < 4 && surfaceY - depth >= minY; depth++) {
@@ -382,7 +380,7 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
                                          int surfaceY, int minY,
                                          int worldX, int worldZ, BlockPos.MutableBlockPos pos) {
         pos.set(localX, surfaceY, localZ);
-        boolean isPodzol = (hash2(worldX, worldZ) >>> 6 & 7) < 2;
+        boolean isPodzol = (WorldgenHash.mix2(worldX, worldZ) >>> 6 & 7) < 2;
         chunk.setBlockState(pos, isPodzol ? Blocks.PODZOL.defaultBlockState() :
                 Blocks.GRASS_BLOCK.defaultBlockState(), 0);
         for (int depth = 1; depth < 4 && surfaceY - depth >= minY; depth++) {
@@ -516,7 +514,7 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
 
         if (y < deepslateTop) {
             double progress = (double) (y - minY) / DEEPSLATE_TRANSITION_THICKNESS;
-            int hash = hash3(worldX, y, worldZ) & 255;
+            int hash = WorldgenHash.mix3(worldX, y, worldZ) & 255;
             double threshold = progress * progress;
             if (hash < (int) (threshold * 255)) {
                 return Blocks.STONE.defaultBlockState();
@@ -580,7 +578,7 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
                 int bedY = surfaceY - carveDepth - 1;
                 if (bedY >= minY) {
                     pos.set(localX, bedY, localZ);
-                    boolean isClay = (hash2(worldX, worldZ) >>> 12 & 3) == 0;
+                    boolean isClay = (WorldgenHash.mix2(worldX, worldZ) >>> 12 & 3) == 0;
                     chunk.setBlockState(pos, isClay ? Blocks.CLAY.defaultBlockState() :
                             Blocks.GRAVEL.defaultBlockState(), 0);
                 }
@@ -638,6 +636,13 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
         // First free block above the surface: solid iff y < surfaceH, so the
         // first free Y is ceil(surfaceH) (== floor+1 except at exact integers).
         int est = (int) Math.ceil(surfaceH);
+        // Every heightmap except OCEAN_FLOOR* treats water as non-air, so an
+        // ocean column reports sea level, not the seabed (up to ~165 blocks
+        // lower). Structure placement and spawn search rely on this; it also
+        // keeps getBaseHeight consistent with getBaseColumn's water fill.
+        if (type != Heightmap.Types.OCEAN_FLOOR && type != Heightmap.Types.OCEAN_FLOOR_WG) {
+            est = Math.max(est, config.seaLevel());
+        }
         if (est < minY) return minY;
         if (est > maxY) return maxY;
         return est;
@@ -680,7 +685,7 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
         if (r != null) {
             info.add("Seed: " + r.getSeed());
             double cont = r.sampleContinentalness(pos.getX(), pos.getZ());
-            info.add(String.format("Continentalness: %.3f", cont));
+            info.add(String.format(java.util.Locale.ROOT, "Continentalness: %.3f", cont));
         }
     }
 

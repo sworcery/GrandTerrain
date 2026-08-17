@@ -20,17 +20,27 @@ public class ConfigScreen {
                 .setParentScreen(parent)
                 .setTitle(Component.literal("GrandTerrain Settings"));
 
-        builder.setSavingRunnable(() -> ConfigManager.save(config));
+        // Validate BEFORE saving: without it a value outside validate()'s clamps
+        // (or a broken cross-field invariant like snowLine <= seaLevel+50) is used
+        // raw for the rest of the session and only clamped on next launch — so
+        // the same world generated different terrain across restarts.
+        builder.setSavingRunnable(() -> {
+            config.validate();
+            ConfigManager.save(config);
+        });
 
         ConfigEntryBuilder entries = builder.entryBuilder();
 
         // Terrain category
         ConfigCategory terrain = builder.getOrCreateCategory(Component.literal("Terrain"));
+        terrain.addEntry(entries.startTextDescription(
+                Component.literal("Settings apply to NEWLY created worlds. Existing worlds keep the settings they were created with."))
+                .build());
 
         terrain.addEntry(entries.startFloatField(
                         Component.literal("Mountain Height Scale"), config.mountainHeightScale)
                 .setDefaultValue(defaults.mountainHeightScale)
-                .setMin(1.0f).setMax(10.0f)
+                .setMin(1.0f).setMax(6.0f)
                 .setTooltip(Component.literal("How tall mountains are relative to vanilla. 5.0 = 5x vanilla height."))
                 .setSaveConsumer(v -> config.mountainHeightScale = v)
                 .build());
@@ -98,7 +108,7 @@ public class ConfigScreen {
         caves.addEntry(entries.startIntField(
                         Component.literal("Cavern Center Y"), config.cavernCenterY)
                 .setDefaultValue(defaults.cavernCenterY)
-                .setMin(-300).setMax(0)
+                .setMin(-250).setMax(0)
                 .setTooltip(Component.literal("Y level where mega caverns center. Lower = deeper caverns."))
                 .setSaveConsumer(v -> config.cavernCenterY = v)
                 .build());

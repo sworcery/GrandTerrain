@@ -49,8 +49,20 @@ jobs:
         with:
           distribution: temurin
           java-version: 25
-      - run: javac -sourcepath mod/src/main/java -d /tmp/gt-tools mod/tools/*.java
-      - run: java -cp /tmp/gt-tools RangeProbe
+      # ConfigSnapshot now carries a DFU codec (world settings are persisted into
+      # level.dat), so the MC-free worldgen tree needs DataFixerUpper + its two
+      # runtime deps on the classpath. Fetched from Mojang's maven; no MC download.
+      - name: Fetch DataFixerUpper (+gson, fastutil)
+        run: |
+          mkdir -p /tmp/gt-libs
+          curl -sSfL -o /tmp/gt-libs/dfu.jar https://libraries.minecraft.net/com/mojang/datafixerupper/9.0.19/datafixerupper-9.0.19.jar
+          curl -sSfL -o /tmp/gt-libs/gson.jar https://repo1.maven.org/maven2/com/google/code/gson/gson/2.9.0/gson-2.9.0.jar
+          curl -sSfL -o /tmp/gt-libs/fastutil.jar https://repo1.maven.org/maven2/it/unimi/dsi/fastutil/8.5.18/fastutil-8.5.18.jar
+      - run: javac -cp "/tmp/gt-libs/*" -sourcepath mod/src/main/java -d /tmp/gt-tools mod/tools/*.java
+      - run: java -cp "/tmp/gt-libs/*:/tmp/gt-tools" RangeProbe
+      # Proves world settings round-trip through the codec — the pregen-boundary
+      # seam bug regression gate.
+      - run: java -cp "/tmp/gt-libs/*:/tmp/gt-tools" SettingsRoundTrip
 
   datapack-json:
     if: ${{ github.server_url == 'https://github.com' }}

@@ -40,7 +40,11 @@ public class GrandterrainConfig {
     public boolean enableWatchtowers = true;
 
     public void validate() {
-        mountainHeightScale = clamp(mountainHeightScale, 1.0f, 10.0f);
+        // Capped at 6: measured 5->10 raised the tallest peak by only 36 blocks
+        // while pushing 2% of the world into the soft-ceiling compression zone
+        // (flat high plateau, not taller mountains). Every notch below 6 does
+        // something visible; above it the slider was buying nothing.
+        mountainHeightScale = clamp(mountainHeightScale, 1.0f, 6.0f);
         continentalScale = clamp(continentalScale, 0.1f, 5.0f);
         erosionStrength = clamp(erosionStrength, 0.0f, 3.0f);
         seaLevel = clamp(seaLevel, 32, 512);

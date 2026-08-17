@@ -14,15 +14,6 @@ public class TerrainDensityFunction {
     private final FastNoiseLite baseTerrainNoise;
     private final ConfigSnapshot config;
 
-    /** Per-thread cached slope value for the last XZ column sampled. */
-    private static final class SlopeCache {
-        long keyX = 1L;  // non-zero sentinel (doubleToRawLongBits of 0.0 is 0)
-        long keyZ = 1L;
-        boolean valid;
-        double value = 1.0;
-    }
-    private final ThreadLocal<SlopeCache> slopeCache = ThreadLocal.withInitial(SlopeCache::new);
-
     public TerrainDensityFunction(long seed, ConfigSnapshot config) {
         this.config = config;
         this.continentalNoise = new ContinentalNoise(seed, config);
@@ -127,22 +118,15 @@ public class TerrainDensityFunction {
         return start + span * (excess / (excess + span));
     }
 
+    /**
+     * Slope attenuation is evaluated once per (x,z) column by every current
+     * caller (the density grid computes surface height once per column; the
+     * bilinear getBaseHeight touches 4 distinct corners), so the previous
+     * one-entry ThreadLocal cache had a measured ~0% hit rate and only cost
+     * a ThreadLocal.get() plus two doubleToLongBits per call. Removed.
+     */
     private double getCachedSlopeAttenuation(double x, double z) {
-        // Normalize -0.0 to 0.0 and avoid NaN issues
-        long kx = Double.doubleToLongBits(x == 0.0 ? 0.0 : x);
-        long kz = Double.doubleToLongBits(z == 0.0 ? 0.0 : z);
-        SlopeCache cache = slopeCache.get();
-
-        if (cache.valid && cache.keyX == kx && cache.keyZ == kz) {
-            return cache.value;
-        }
-
-        double result = computeSlopeAttenuation(x, z);
-        cache.keyX = kx;
-        cache.keyZ = kz;
-        cache.value = result;
-        cache.valid = true;
-        return result;
+        return computeSlopeAttenuation(x, z);
     }
 
     private double computeBaseHeight(double continental) {

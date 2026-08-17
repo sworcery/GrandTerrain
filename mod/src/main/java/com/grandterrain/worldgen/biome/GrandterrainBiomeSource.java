@@ -4,6 +4,7 @@ import com.grandterrain.Grandterrain;
 import com.grandterrain.config.ConfigManager;
 import com.grandterrain.config.ConfigSnapshot;
 import com.grandterrain.worldgen.noise.ClimateNoise;
+import com.grandterrain.worldgen.noise.WorldgenHash;
 import com.mojang.datafixers.util.Pair;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
@@ -23,9 +24,17 @@ import java.util.stream.Stream;
 
 public class GrandterrainBiomeSource extends BiomeSource {
 
+    /**
+     * Carries its own copy of the settings (optional, like the generator's)
+     * because Minecraft decodes the biome source independently of the chunk
+     * generator — it cannot be handed the generator's snapshot at load time.
+     * Both are populated from the same local config at world creation and
+     * both read the same persisted values back afterwards, so they agree.
+     */
     public static final MapCodec<GrandterrainBiomeSource> CODEC = RecordCodecBuilder.mapCodec(instance ->
             instance.group(
-                    RegistryOps.retrieveGetter(Registries.BIOME)
+                    RegistryOps.retrieveGetter(Registries.BIOME),
+                    ConfigSnapshot.CODEC.optionalFieldOf("settings").forGetter(src -> java.util.Optional.of(src.config))
             ).apply(instance, GrandterrainBiomeSource::new)
     );
 
@@ -33,11 +42,12 @@ public class GrandterrainBiomeSource extends BiomeSource {
     private final ConfigSnapshot config;
 
     private final int yDeepOcean;
+    /** Below this, columns are the underground caverns biome (cave mob spawns, no ocean fog). */
+    private final int yCavernsCeiling;
     private final int yCoastalCliffs;
-    private final int yLushCaveCeiling;
-    private final int yDeepDarkCeiling;
 
     private final Holder<Biome> deepOcean;
+    private final Holder<Biome> caverns;
     private final Holder<Biome> coastalCliffs;
     private final Holder<Biome> lowlandPlains;
     private final Holder<Biome> temperateForest;
@@ -69,6 +79,11 @@ public class GrandterrainBiomeSource extends BiomeSource {
         this(biomeGetter, ConfigSnapshot.from(ConfigManager.getConfig()));
     }
 
+    /** Codec entry point: persisted settings if present, else the local config. */
+    public GrandterrainBiomeSource(HolderGetter<Biome> biomeGetter, java.util.Optional<ConfigSnapshot> settings) {
+        this(biomeGetter, settings.orElseGet(() -> ConfigSnapshot.from(ConfigManager.getConfig())));
+    }
+
     public GrandterrainBiomeSource(HolderGetter<Biome> biomeGetter, ConfigSnapshot config) {
         this.biomeGetter = biomeGetter;
         this.config = config;
@@ -86,13 +101,12 @@ public class GrandterrainBiomeSource extends BiomeSource {
         int t6 = Math.max(t5 + 5, snowLine - 20);
 
         this.yDeepOcean = t0;
+        // Everything below the sub-sea-floor band is caves, not ocean.
+        this.yCavernsCeiling = t0 - 60;
         this.yCoastalCliffs = t1;
 
-        int worldMinY = config.worldMinY();
-        this.yLushCaveCeiling = Math.max(worldMinY + 100, seaLevel - 80);
-        this.yDeepDarkCeiling = Math.max(worldMinY + 8, yLushCaveCeiling - 100);
-
         this.deepOcean = getOrFallback(biomeGetter, GrandterrainBiomes.DEEP_OCEAN, Biomes.DEEP_OCEAN);
+        this.caverns = getOrFallback(biomeGetter, GrandterrainBiomes.CAVERNS, Biomes.DRIPSTONE_CAVES);
         this.coastalCliffs = getOrFallback(biomeGetter, GrandterrainBiomes.COASTAL_CLIFFS, Biomes.STONY_SHORE);
         this.lowlandPlains = getOrFallback(biomeGetter, GrandterrainBiomes.LOWLAND_PLAINS, Biomes.PLAINS);
         this.temperateForest = getOrFallback(biomeGetter, GrandterrainBiomes.TEMPERATE_FOREST, Biomes.FOREST);
@@ -223,7 +237,7 @@ public class GrandterrainBiomeSource extends BiomeSource {
     @Override
     protected Stream<Holder<Biome>> collectPossibleBiomes() {
         return Stream.of(
-                deepOcean, coastalCliffs, lowlandPlains, temperateForest,
+                caverns, deepOcean, coastalCliffs, lowlandPlains, temperateForest,
                 alpineMeadow, mountainPineForest, rockyHighlands, snowPeaks,
                 deepValley, volcanicRegion,
                 desert, savanna, swamp, tundra, birchForest, darkForest
@@ -236,6 +250,9 @@ public class GrandterrainBiomeSource extends BiomeSource {
         int blockX = x * 4;
         int blockZ = z * 4;
 
+        // The whole cave system used to fall through to deep_ocean (drowned-only
+        // spawns, ocean fog underground). Route it to a real underground biome.
+        if (blockY < yCavernsCeiling) return caverns;
         if (blockY < yDeepOcean) return deepOcean;
         if (blockY < yCoastalCliffs) return coastalCliffs;
 
@@ -262,19 +279,23 @@ public class GrandterrainBiomeSource extends BiomeSource {
         return biomeParameters.findValue(target);
     }
 
+    /**
+     * Boundary dithers. One avalanche hash per quart cell; altitude, temperature
+     * and humidity each take a DISJOINT byte so they are uncorrelated. The old
+     * linear hashes repeated every 28 blocks in Z / 44 in X, tiled exactly
+     * every 1024 blocks, and made the temperature and humidity jitter the
+     * SAME field shifted 356 blocks — visible plaid on biome boundaries.
+     */
     private int altitudeJitter(int blockX, int blockZ) {
         if (blendY <= 0) return 0;
-        int bx = blockX >> 2;
-        int bz = blockZ >> 2;
-        int hash = ((bx * 73856093) ^ (bz * 83492791)) & 0xFF;
+        int hash = WorldgenHash.mix2(blockX >> 2, blockZ >> 2) >>> 24;
         return (hash * (2 * blendY + 1)) / 256 - blendY;
     }
 
     private double climateJitter(int blockX, int blockZ, int axis) {
         if (blendClimate <= 0.0) return 0.0;
-        int bx = blockX >> 2;
-        int bz = blockZ >> 2;
-        int hash = ((bx * 19349669 + axis * 73856093) ^ (bz * 83492791)) & 0xFF;
+        int h = WorldgenHash.mix2(blockX >> 2, blockZ >> 2);
+        int hash = (axis == 0 ? (h >>> 16) : (h >>> 8)) & 0xFF;
         return ((double) hash / 256.0 - 0.5) * 2.0 * blendClimate;
     }
 }
