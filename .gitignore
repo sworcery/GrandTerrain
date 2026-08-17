@@ -47,3 +47,6 @@ config/grandterrain.properties
 # Worker
 worker/data/
 worker/worlds/
+
+# Local deployment settings (copy from .env.example)
+.env
