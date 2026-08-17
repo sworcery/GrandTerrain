@@ -58,7 +58,7 @@ export interface ConfigField {
 }
 
 export const TERRAIN_FIELDS: ConfigField[] = [
-  { key: "mountainHeightScale", label: "Mountain Height Scale", type: "float", default: 5.0, min: 1.0, max: 10.0, step: 0.5, tooltip: "How tall mountains are relative to vanilla. 5.0 = 5x vanilla height." },
+  { key: "mountainHeightScale", label: "Mountain Height Scale", type: "float", default: 5.0, min: 1.0, max: 6.0, step: 0.5, tooltip: "How tall mountains are relative to vanilla. Above 6 the world ceiling flattens peaks into plateau, so the scale stops there." },
   { key: "continentalScale", label: "Continental Scale", type: "float", default: 1.0, min: 0.5, max: 3.0, step: 0.1, tooltip: "Scale of continental landmasses. Higher = larger continents." },
   { key: "erosionStrength", label: "Erosion Strength", type: "float", default: 1.0, min: 0.0, max: 3.0, step: 0.1, tooltip: "How much erosion carves valleys. 0 = no erosion." },
   { key: "seaLevel", label: "Sea Level", type: "int", default: 128, min: 60, max: 200, step: 1, tooltip: "Height of the ocean surface." },

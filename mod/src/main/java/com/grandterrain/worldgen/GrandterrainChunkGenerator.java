@@ -91,6 +91,7 @@ public class GrandterrainChunkGenerator extends ChunkGenerator {
 
         if (biomeSource instanceof GrandterrainBiomeSource gbs) {
             gbs.initClimate(seed);
+            gbs.initTerrain(this.noiseRouter.getTerrainDensity());
         }
 
         return super.createState(structureSetLookup, randomState, seed);

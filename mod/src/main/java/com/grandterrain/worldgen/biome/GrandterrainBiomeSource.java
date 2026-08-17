@@ -4,6 +4,7 @@ import com.grandterrain.Grandterrain;
 import com.grandterrain.config.ConfigManager;
 import com.grandterrain.config.ConfigSnapshot;
 import com.grandterrain.worldgen.noise.ClimateNoise;
+import com.grandterrain.worldgen.noise.TerrainDensityFunction;
 import com.grandterrain.worldgen.noise.WorldgenHash;
 import com.mojang.datafixers.util.Pair;
 import com.mojang.serialization.MapCodec;
@@ -42,8 +43,6 @@ public class GrandterrainBiomeSource extends BiomeSource {
     private final ConfigSnapshot config;
 
     private final int yDeepOcean;
-    /** Below this, columns are the underground caverns biome (cave mob spawns, no ocean fog). */
-    private final int yCavernsCeiling;
     private final int yCoastalCliffs;
 
     private final Holder<Biome> deepOcean;
@@ -74,6 +73,28 @@ public class GrandterrainBiomeSource extends BiomeSource {
     private final float altParamOffset;
 
     private volatile ClimateNoise climateNoise;
+    /** Set with the climate noise in createState; null only before that. */
+    private volatile TerrainDensityFunction terrain;
+
+    /** One-entry per-thread cache: fillBiomesFromNoise walks a whole column
+     *  of 4-block cells per (x,z), so the surface height is computed once
+     *  per quart column instead of once per cell (~16 per chunk). */
+    private static final class ColumnCache {
+        int qx = Integer.MIN_VALUE;
+        int qz = Integer.MIN_VALUE;
+        double surface;
+    }
+    private final ThreadLocal<ColumnCache> columnCache = ThreadLocal.withInitial(ColumnCache::new);
+
+    private double surfaceAt(TerrainDensityFunction t, int quartX, int quartZ, int blockX, int blockZ) {
+        ColumnCache c = columnCache.get();
+        if (c.qx != quartX || c.qz != quartZ) {
+            c.surface = t.computeSurfaceHeight(blockX, blockZ);
+            c.qx = quartX;
+            c.qz = quartZ;
+        }
+        return c.surface;
+    }
 
     public GrandterrainBiomeSource(HolderGetter<Biome> biomeGetter) {
         this(biomeGetter, ConfigSnapshot.from(ConfigManager.getConfig()));
@@ -101,8 +122,6 @@ public class GrandterrainBiomeSource extends BiomeSource {
         int t6 = Math.max(t5 + 5, snowLine - 20);
 
         this.yDeepOcean = t0;
-        // Everything below the sub-sea-floor band is caves, not ocean.
-        this.yCavernsCeiling = t0 - 60;
         this.yCoastalCliffs = t1;
 
         this.deepOcean = getOrFallback(biomeGetter, GrandterrainBiomes.DEEP_OCEAN, Biomes.DEEP_OCEAN);
@@ -147,6 +166,11 @@ public class GrandterrainBiomeSource extends BiomeSource {
 
     public void initClimate(long seed) {
         this.climateNoise = new ClimateNoise(seed);
+    }
+
+    /** Lets the biome source tell underground from underwater (see getNoiseBiome). */
+    public void initTerrain(TerrainDensityFunction terrain) {
+        this.terrain = terrain;
     }
 
     public HolderGetter<Biome> getBiomeGetter() {
@@ -250,9 +274,17 @@ public class GrandterrainBiomeSource extends BiomeSource {
         int blockX = x * 4;
         int blockZ = z * 4;
 
-        // The whole cave system used to fall through to deep_ocean (drowned-only
-        // spawns, ocean fog underground). Route it to a real underground biome.
-        if (blockY < yCavernsCeiling) return caverns;
+        // Anything meaningfully BELOW THE TERRAIN SURFACE is underground, and
+        // gets the caverns biome (cave mobs, no ocean fog). A fixed Y cutoff
+        // cannot do this: the ocean bands below only make sense for the water
+        // column, but under land the same Y range is prime cave territory —
+        // it was resolving to deep_ocean, which spawns nothing but drowned.
+        // The margin keeps the top few blocks on the surface biome so surface
+        // painting and decoration still see the real biome.
+        TerrainDensityFunction t = terrain;
+        if (t != null && blockY < surfaceAt(t, x, z, blockX, blockZ) - 8.0) {
+            return caverns;
+        }
         if (blockY < yDeepOcean) return deepOcean;
         if (blockY < yCoastalCliffs) return coastalCliffs;
 

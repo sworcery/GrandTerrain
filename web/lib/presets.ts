@@ -20,7 +20,7 @@ export const PRESETS: Preset[] = [
     name: "Alpine Expanse",
     description: "Extreme mountain heights with deep valleys and heavy erosion. Snow line lowered for dramatic peaks.",
     config: {
-      terrain: { mountainHeightScale: 8.0, continentalScale: 1.5, erosionStrength: 2.0, seaLevel: 100 },
+      terrain: { mountainHeightScale: 6.0, continentalScale: 1.5, erosionStrength: 2.0, seaLevel: 100 },
       caves: { caveDensity: 0.8, caveFrequency: 1.0, enableMegaCaverns: true, enableUndergroundRivers: true, cavernCenterY: -150 },
       rivers: { riverWidth: 1.5, riverDepth: 2.0 },
       climate: { snowLineBase: 300, biomeBlendWidth: 6, climateBlendWidth: 0.08 },
