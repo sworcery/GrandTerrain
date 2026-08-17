@@ -29,6 +29,20 @@ const SECTIONS: { key: Category; title: string; fields: typeof TERRAIN_FIELDS }[
 
 const ACTIVE_JOB_KEY = "gt_active_job";
 
+function formatElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+// Elapsed since the job was created (survives a page reload); falls back to
+// when this tab started watching if the server timestamp is unparseable.
+function elapsedSince(createdAt: string, fallbackStart: number): number {
+  const created = Date.parse(createdAt);
+  return Date.now() - (Number.isNaN(created) ? fallbackStart : created);
+}
+
 export default function ConfigurePage() {
   const [config, setConfig] = useState<WorldConfig>(structuredClone(DEFAULT_CONFIG));
   const [activePreset, setActivePreset] = useState("default");
@@ -75,8 +89,15 @@ export default function ConfigurePage() {
   async function pollUntilDone(jobId: string) {
     try {
       let consecutiveFailures = 0;
-      for (let attempt = 0; attempt < 150; attempt++) {
-        await new Promise((r) => setTimeout(r, 4000));
+      const startedAt = Date.now();
+      // No attempt cap: a default-radius world takes about an hour, and the
+      // job lives server-side regardless. We poll until a terminal status.
+      for (;;) {
+        const elapsedMs = Date.now() - startedAt;
+        // Back off once the job is clearly long-running: 4s for the first
+        // 2 minutes, 8s until 10 minutes, then 15s.
+        const interval = elapsedMs < 2 * 60_000 ? 4000 : elapsedMs < 10 * 60_000 ? 8000 : 15_000;
+        await new Promise((r) => setTimeout(r, interval));
         // Page left — stop polling and never fire a late redirect.
         if (!mountedRef.current) return;
         let status;
@@ -84,7 +105,7 @@ export default function ConfigurePage() {
           status = await getJobStatus(jobId);
           consecutiveFailures = 0;
         } catch {
-          // One network blip in a 10-minute wait must not abort the job.
+          // One network blip in an hour-long wait must not abort the job.
           if (++consecutiveFailures >= 5) {
             throw new Error("Lost contact with the generation server. Reload this page to resume.");
           }
@@ -100,18 +121,39 @@ export default function ConfigurePage() {
         if (status.status === "ready") {
           localStorage.removeItem(ACTIVE_JOB_KEY);
           if (!mountedRef.current) return;
+          const url = downloadUrl(jobId);
+          // A swept zip would otherwise navigate the user off the app onto a
+          // bare JSON 404 — check first, and only leave the page when it's there.
+          let available = false;
+          try {
+            available = (await fetch(url, { method: "HEAD" })).ok;
+          } catch {
+            // treat as unavailable
+          }
+          if (!mountedRef.current) return;
+          if (!available) {
+            setGenStatus(
+              "World file is no longer available — it may have been cleaned up; generate again.",
+            );
+            return;
+          }
           setGenStatus("Done — downloading your world file.");
-          window.location.href = downloadUrl(jobId);
+          window.location.href = url;
           return;
         }
         if (status.status === "failed") {
           localStorage.removeItem(ACTIVE_JOB_KEY);
-          if (mountedRef.current) setGenStatus("Generation failed. Please try again.");
+          if (mountedRef.current) {
+            setGenStatus(status.error ? `Generation failed: ${status.error}` : "Generation failed. Please try again.");
+          }
           return;
         }
-      }
-      if (mountedRef.current) {
-        setGenStatus(`Still generating (job ${jobId}) — reload this page later to resume.`);
+        if (mountedRef.current) {
+          const verb = status.status === "pending" ? "Queued" : "Generating";
+          setGenStatus(
+            `${verb} (job ${jobId}) — ${formatElapsed(elapsedSince(status.createdAt, startedAt))} elapsed. Large worlds take about an hour; you can close this tab and come back.`,
+          );
+        }
       }
     } catch (e) {
       if (mountedRef.current) {
