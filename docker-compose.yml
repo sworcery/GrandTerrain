@@ -11,7 +11,7 @@ services:
   worker:
     build: ./worker
     ports:
-      - "8080:8080"
+      - "${WORKER_PORT:-8080}:8080"
     volumes:
       - ./worker/data:/app/data
     environment:
@@ -27,6 +27,7 @@ services:
       - SERVER_MEMORY=${SERVER_MEMORY:-6G}
       - PREGEN_RADIUS=${PREGEN_RADIUS:-2000}
       - PREGEN_TIMEOUT=${PREGEN_TIMEOUT:-21600}
+      - MIN_FREE_DISK_GB=${MIN_FREE_DISK_GB:-5}
     restart: unless-stopped
 
   web:
@@ -35,7 +36,7 @@ services:
       args:
         - NEXT_PUBLIC_WORKER_URL=${NEXT_PUBLIC_WORKER_URL:-http://localhost:8080}
     ports:
-      - "3000:3000"
+      - "${WEB_PORT:-3000}:3000"
     depends_on:
       - worker
     restart: unless-stopped
