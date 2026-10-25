@@ -4,7 +4,7 @@
 
 # GrandTerrain
 
-A Fabric mod for **massive, realistic Minecraft world generation** — towering mountains, deep multi-layer cave systems, underground rivers, and 16 custom biomes across a 1024-block-tall world — plus a web configurator to dial in the terrain and generate a downloadable world.
+A Fabric mod for **massive, realistic Minecraft world generation**: towering mountains, deep multi-layer cave systems, underground rivers, and 17 custom biomes across a 1024-block-tall world. The repo also includes a web configurator for tuning the terrain and generating a downloadable world.
 
 Built to pair with [Voxy](https://modrinth.com/mod/voxy) for extreme render distances, so the scale of the terrain is actually visible.
 
@@ -14,7 +14,7 @@ Built to pair with [Voxy](https://modrinth.com/mod/voxy) for extreme render dist
 
 - Continental-scale terrain with ridged mountains, macro erosion, and Voronoi valleys
 - Layered cave system: cheese caves, spaghetti caves, mega caverns, and underground rivers
-- 16 custom biomes selected by a temperature/humidity/altitude climate model
+- 16 surface biomes selected by a temperature/humidity/altitude climate model, plus a caverns biome for everything below the terrain surface, so caves spawn normal cave mobs
 - Config-driven structures (castles, ruins, dungeons, watchtowers) with biome filtering
 - Fully configurable via an in-game [Cloth Config](https://modrinth.com/mod/cloth-config) screen or a `grandterrain.properties` file
 - Web configurator for tuning every parameter and exporting/generating worlds
